@@ -12,7 +12,7 @@ Convert YouTube videos into study flashcards using AI-powered transcript extract
 
 1. **Clone the repository**
 ```bash
-git clone <repo-url>
+git clone https://github.com/Ricky-zzz/yt-flashcards.git
 cd yt_transcript
 ```
 
@@ -29,12 +29,17 @@ source venv/bin/activate
 
 3. **Install Dependencies**
 ```bash
+pip install -r requirements.txt
+```
+
+Or manually:
+```bash
 pip install fastapi uvicorn youtube-transcript-api transformers torch nltk
 ```
 
 4. **Verify Installation**
 ```bash
-python -c "import fastapi; import youtube_transcript_api; print('✓ All dependencies installed')"
+python -c "import fastapi; import youtube_transcript_api; import transformers; print('✓ All dependencies installed')"
 ```
 
 ## Project Structure
@@ -71,30 +76,57 @@ The pipeline performs 4 steps:
 ### Testing the Pipeline
 
 ```bash
-# Basic test
+# Basic test (2-minute transcript)
 python tests/pipeline_test.py "https://youtu.be/VIDEO_ID"
 
-# With options
-python tests/pipeline_test.py "https://youtu.be/VIDEO_ID" \
-  --max_chunks 3 \
+# With custom parameters
+python tests/pipeline_test.py "https://youtu.be/cs3B0zcRJco" \
+  --chunk_size 600 \
   --num_pairs 3 \
-  --output results.json
+  --max_chunks 5
 ```
 
-**Example:**
+**Examples:**
 ```bash
+# Khan Academy 
 python tests/pipeline_test.py "https://youtu.be/KyBgxe-rU48"
+
+# Output
+python tests/pipeline_test.py "https://youtu.be/cs3B0zcRJco" --max_chunks 3
 ```
 
 **Output:** `pipeline_results.json` with extracted flashcards
-
-### Current Performance
-
-- ✅ Extracts transcripts reliably
-- ✅ Chunks text semantically
-- ⚠️ Q&A generation uses keyword extraction + templates
-  - Good for basic learning material
+by word count (~600 words/chunk with overlap)
+- ✅ Generates basic Q&A pairs using T5 model
+  - Simple keyword extraction + template approach for initial release
   - Will be upgraded to Mistral/ChatGPT in Phase 2
+
+### How Chunking Works
+
+YouTube auto-captions have **zero punctuation**, so we chunk by **word count** not sentences:
+- **Default:** 600 words per chunk
+- **Overlap:** 75 words between chunks (context preservation)
+- **Minimum:** 80 words to generate cards from
+
+Example: 8,500-word transcript → ~12-15 chunks → 30-45 flashcards
+- ✅ Chunks text semantically
+  - Supports: `youtu.be/ID`, `youtube.com/watch?v=ID`, `youtube.com/shorts/ID`
+  - Returns: Plain text transcripts or timestamped snippets
+  
+- **cleaner.py** - Removes noise from auto-captions
+  - Removes `[Music]`, `[Applause]` tags
+  - Removes fillers (um, uh, like, basically)
+  - Collapses whitespace
+  
+- **chunker.py** - Splits text by word count (not sentences)
+  - 600 words/chunk default (configurable)
+  - 75-word overlap for context (configurable)
+  - Validates minimum chunk size
+  
+- **generator.py** - T5 model for Q&A generation
+  - Uses transformers library
+  - CPU- and GPU-friendly
+  - Fallback keyword extraction if model unavailable
 
 ## Architecture
 

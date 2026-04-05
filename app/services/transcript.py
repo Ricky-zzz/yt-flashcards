@@ -1,98 +1,97 @@
 """
 Service for extracting transcripts from YouTube videos.
 """
-from youtube_transcript_api import YouTubeTranscriptApi
-from typing import List, Dict
 import re
+from typing import List, Dict
+
+from youtube_transcript_api import YouTubeTranscriptApi
 
 
 def extract_video_id(url: str) -> str:
     """
     Extract video ID from various YouTube URL formats.
-    
+
     Supports:
     - https://youtu.be/VIDEO_ID
     - https://www.youtube.com/watch?v=VIDEO_ID
-    - Just VIDEO_ID
+    - https://www.youtube.com/shorts/VIDEO_ID
+    - Raw VIDEO_ID (11 chars)
     """
-    # If it's already just an ID
-    if len(url) == 11 and url.isalnum():
+    url = url.strip()
+
+    # Already a bare ID
+    if re.fullmatch(r'[a-zA-Z0-9_-]{11}', url):
         return url
-    
-    # Match youtu.be format
-    youtu_match = re.search(r'youtu\.be/([a-zA-Z0-9_-]{11})', url)
-    if youtu_match:
-        return youtu_match.group(1)
-    
-    # Match youtube.com format
-    yt_match = re.search(r'v=([a-zA-Z0-9_-]{11})', url)
-    if yt_match:
-        return yt_match.group(1)
-    
-    raise ValueError(f"Could not extract video ID from URL: {url}")
+
+    for pattern in [
+        r'youtu\.be/([a-zA-Z0-9_-]{11})',
+        r'v=([a-zA-Z0-9_-]{11})',
+        r'shorts/([a-zA-Z0-9_-]{11})',
+    ]:
+        m = re.search(pattern, url)
+        if m:
+            return m.group(1)
+
+    raise ValueError(f"Could not extract video ID from: {url}")
 
 
 def get_transcript(video_url: str, language: str = 'en') -> str:
     """
-    Fetch transcript from YouTube video.
-    
+    Fetch full transcript from a YouTube video as a plain string.
+
     Args:
         video_url: YouTube URL or video ID
-        language: Language code (default: 'en' for English)
-    
+        language: Preferred language code (default: 'en')
+
     Returns:
-        Full transcript as concatenated string
-    
+        Full transcript as a single concatenated string
+
     Raises:
-        ValueError: If video ID cannot be extracted or transcript unavailable
+        ValueError: If transcript cannot be fetched
     """
     video_id = extract_video_id(video_url)
-    
+    api = YouTubeTranscriptApi()
+
     try:
-        # Create API instance and fetch transcript
-        api = YouTubeTranscriptApi()
         transcript = api.fetch(video_id, languages=[language])
-    except Exception as e:
-        # Fallback to available transcript if specific language unavailable
+    except Exception:
         try:
-            api = YouTubeTranscriptApi()
+            # Fallback: accept any available language
             transcript = api.fetch(video_id)
-        except Exception as fallback_e:
-            raise ValueError(f"Could not fetch transcript for video {video_id}: {str(fallback_e)}")
-    
-    # Concatenate all text from transcript snippets
-    full_text = ' '.join([snippet.text for snippet in transcript.snippets])
-    
-    return full_text
+        except Exception as e:
+            raise ValueError(
+                f"Could not fetch transcript for video '{video_id}': {e}\n"
+                "The video may have no captions, or captions may be disabled."
+            )
+
+    return ' '.join(snippet.text for snippet in transcript.snippets)
 
 
 def get_transcript_with_timestamps(video_url: str, language: str = 'en') -> List[Dict]:
     """
-    Fetch transcript with timestamps preserved.
-    
+    Fetch transcript with per-snippet timestamps.
+
     Args:
         video_url: YouTube URL or video ID
-        language: Language code (default: 'en' for English)
-    
+        language: Preferred language code (default: 'en')
+
     Returns:
-        List of dicts with 'text' and 'timestamp' keys
+        List of {'text': str, 'timestamp': float} dicts
     """
     video_id = extract_video_id(video_url)
-    
+    api = YouTubeTranscriptApi()
+
     try:
-        api = YouTubeTranscriptApi()
         transcript = api.fetch(video_id, languages=[language])
-    except Exception as e:
+    except Exception:
         try:
-            api = YouTubeTranscriptApi()
             transcript = api.fetch(video_id)
-        except Exception as fallback_e:
-            raise ValueError(f"Could not fetch transcript for video {video_id}: {str(fallback_e)}")
-    
+        except Exception as e:
+            raise ValueError(
+                f"Could not fetch transcript for video '{video_id}': {e}"
+            )
+
     return [
-        {
-            'text': snippet.text,
-            'timestamp': snippet.start
-        }
+        {'text': snippet.text, 'timestamp': snippet.start}
         for snippet in transcript.snippets
     ]
