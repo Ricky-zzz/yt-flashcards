@@ -23,7 +23,8 @@ This document serves as the **development context** for the entire project. Foll
 - ✅ Extract transcript from YouTube URL
 - ✅ Clean and normalize text
 - ✅ Chunk text intelligently (200–400 words)
-- ✅ Generate Q&A pairs using T5 model
+- ✅ Generate Q&A pairs using Gemini Flash or Groq
+- ✅ Classify questions (difficulty, type, topic)
 - ✅ Output valid JSON format
 
 **Deliverable:** `tests/pipeline_test.py` working end-to-end
@@ -92,7 +93,7 @@ yt-flashcard-generator/
 │   │   ├── transcript.py            # YouTube transcript extraction
 │   │   ├── cleaner.py               # Text normalization
 │   │   ├── chunker.py               # Text chunking logic
-│   │   └── generator.py             # T5 model integration
+│   │   └── generator.py             # LLM integration (Gemini/Groq)
 │   │
 │   ├── schemas/                     # Pydantic validation models (Phase 2)
 │   │   ├── __init__.py
@@ -240,7 +241,7 @@ class TranscriptExtractionError(FlashcardGeneratorError):
     pass
 
 class ModelError(FlashcardGeneratorError):
-    """Raised when T5 model fails"""
+  """Raised when the LLM generator fails"""
     pass
 ```
 

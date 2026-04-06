@@ -19,7 +19,7 @@ Validate that the system can generate meaningful flashcards from a YouTube video
 ### Pipeline Flow
 ```
 
-YouTube URL → Transcript → Clean → Chunk → T5 Model → Flashcards
+YouTube URL → Transcript → Clean → Chunk → LLM (Gemini/Groq) → Flashcards → Classifier
 
 ````
 
@@ -27,8 +27,10 @@ YouTube URL → Transcript → Clean → Chunk → T5 Model → Flashcards
 - [ ] Extract transcript using `youtube-transcript-api`
 - [ ] Clean transcript (remove noise, normalize text)
 - [ ] Split text into chunks (200–400 words)
-- [ ] Integrate T5 model (`t5-small` or `t5-base`)
-- [ ] Generate Q&A pairs from chunks
+- [ ] Integrate LLM generator (Gemini as primary, Groq fallback)
+- [ ] Add API keys to `.env` and verify loading
+- [ ] Generate Q&A pairs from chunks (JSON)
+- [ ] Classify questions (difficulty, type, topic)
 - [ ] Combine outputs into flashcard list
 
 ### Output Format
@@ -45,4 +47,15 @@ YouTube URL → Transcript → Clean → Chunk → T5 Model → Flashcards
 
 * Working Python script (`pipeline_test.py`)
 * Console output of generated flashcards
+* No quota errors with fallback in place
+
+---
+
+## ✅ Plan For Tomorrow (Phase 1 finish)
+
+- Get new Gemini key for the new project and wait for free-tier quota to show
+- Create Groq key and add `GROQ_API_KEY` to `.env`
+- Re-run pipeline test (2 chunks, 3 pairs)
+- Confirm fallback works on 429 (Gemini → Groq)
+- Save sample outputs for demo and review quality
 

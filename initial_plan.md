@@ -11,7 +11,7 @@ Let’s set you up properly so you don’t get messy later.
 That can:
 
 ```text
-YouTube URL → Transcript → Clean → Chunk → T5 → Flashcards
+YouTube URL → Transcript → Clean → Chunk → LLM (Gemini/Groq) → Flashcards
 ```
 
 No Vue yet. No fancy UI. Just make it WORK.
@@ -55,6 +55,7 @@ yt-flashcard-generator/
 
 ```bash
 pip install fastapi uvicorn youtube-transcript-api transformers torch nltk
+pip install google-generativeai python-dotenv
 ```
 
 ---
@@ -143,24 +144,10 @@ def chunk_text(text, max_words=200):
 
 ---
 
-## 📌 generator.py (T5)
+## 📌 generator.py (LLM)
 
 ```python
-from transformers import T5Tokenizer, T5ForConditionalGeneration
-
-tokenizer = T5Tokenizer.from_pretrained("t5-small")
-model = T5ForConditionalGeneration.from_pretrained("t5-small")
-
-def generate_flashcards(text):
-    input_text = "generate question: " + text
-
-    inputs = tokenizer.encode(input_text, return_tensors="pt", max_length=512, truncation=True)
-
-    outputs = model.generate(inputs, max_length=64)
-
-    question = tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-    return [{"question": question, "answer": text[:100]}]
+"""Pseudo-code only: generator now uses Gemini or Groq via API."""
 ```
 
 ---

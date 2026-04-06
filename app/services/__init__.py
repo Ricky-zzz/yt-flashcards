@@ -4,7 +4,8 @@ App services package for YouTube-to-Flashcards pipeline.
 from .transcript import get_transcript, get_transcript_with_timestamps, extract_video_id
 from .cleaner import preprocess_for_chunking, clean_text
 from .chunker import smart_chunk, chunk_by_word_count, validate_chunks
-from .generator import T5GeneratorService
+from .generator import FlashcardGenerator, T5GeneratorService
+from .classifier import QuestionClassifier
 
 __all__ = [
     'get_transcript',
@@ -15,5 +16,7 @@ __all__ = [
     'smart_chunk',
     'chunk_by_word_count',
     'validate_chunks',
+    'FlashcardGenerator',
     'T5GeneratorService',
+    'QuestionClassifier',
 ]

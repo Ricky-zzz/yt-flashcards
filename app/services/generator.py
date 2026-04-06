@@ -1,128 +1,227 @@
 """
-Flashcard Q&A generator using T5 model.
-Extracts key concepts and generates question-answer pairs from text chunks.
+Flashcard Q&A generator using Google Gemini Flash API.
+Generates high-quality question-answer pairs from transcript chunks.
 """
+import json
 import logging
+import os
+import time
 from typing import List, Dict, Optional
 
-import torch
-from transformers import T5Tokenizer, T5ForConditionalGeneration
+import google.generativeai as genai
+
+try:
+    from groq import Groq
+except Exception:
+    Groq = None
 
 logger = logging.getLogger(__name__)
 
 
-class T5GeneratorService:
+class FlashcardGenerator:
     """
-    Generate flashcard Q&A pairs using T5 model.
+    Generate flashcard Q&A pairs using Google Gemini Flash.
     
-    T5 is a text-to-text transformer that can be prompted to generate
-    questions and answers from transcript chunks.
+    Gemini Flash understands raw unpunctuated text natively and generates
+    high-quality questions and answers without additional training.
+    
+    Free tier: 15 requests/minute, 1M tokens/day (sufficient for demos).
     """
     
-    _model = None
-    _tokenizer = None
-    _device = None
-    
-    @classmethod
-    def load_model(cls, model_name: str = 't5-small'):
-        """Load T5 model and tokenizer (cached for reuse)."""
-        if cls._model is None:
-            cls._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            logger.info(f"Loading {model_name} onto {cls._device}...")
-            cls._tokenizer = T5Tokenizer.from_pretrained(model_name)
-            cls._model = T5ForConditionalGeneration.from_pretrained(model_name)
-            cls._model.to(cls._device)
-        return cls._model, cls._tokenizer, cls._device
-    
-    @classmethod
-    def generate_qa_pairs(cls,
-                         text: str,
-                         num_pairs: int = 3,
-                         model_name: str = 't5-small') -> List[Dict[str, str]]:
+    def __init__(self,
+                 api_key: Optional[str] = None,
+                 model: str = "gemini-2.0-flash",
+                 provider: Optional[str] = None,
+                 fallback_provider: Optional[str] = None):
         """
-        Generate Q&A pairs from a text chunk using T5.
+        Initialize Gemini Flash client.
         
         Args:
-            text: Transcript chunk
-            num_pairs: Target number of Q&A pairs
-            model_name: T5 model to use (t5-small, t5-base, etc.)
+            api_key: Google API key (defaults to GEMINI_API_KEY env var)
+            model: Model to use (default: gemini-2.0-flash)
+        """
+        self.provider = (provider or os.getenv("LLM_PROVIDER") or "gemini").lower()
+        self.fallback_provider = (fallback_provider or os.getenv("LLM_FALLBACK_PROVIDER") or "groq").lower()
+
+        self.gemini_api_key = api_key or os.getenv('GEMINI_API_KEY')
+        self.gemini_model_name = model or os.getenv("GEMINI_MODEL") or "gemini-2.0-flash"
+        self.groq_api_key = os.getenv("GROQ_API_KEY")
+        self.groq_model_name = os.getenv("GROQ_MODEL") or "llama-3.3-70b-versatile"
+
+        self.gemini_model = None
+        self.groq_client = None
+
+        if self.provider == "gemini" or self.fallback_provider == "gemini":
+            if not self.gemini_api_key:
+                raise ValueError(
+                    "GEMINI_API_KEY not set. Get free key at "
+                    "https://aistudio.google.com/apikey and set as env variable."
+                )
+            genai.configure(api_key=self.gemini_api_key)
+            self.gemini_model = genai.GenerativeModel(self.gemini_model_name)
+
+        if self.provider == "groq" or self.fallback_provider == "groq":
+            if not self.groq_api_key:
+                logger.warning("GROQ_API_KEY not set; Groq fallback disabled.")
+            elif Groq is None:
+                raise ValueError("Groq SDK not installed. Add 'groq' to requirements and install it.")
+            else:
+                self.groq_client = Groq(api_key=self.groq_api_key)
+    
+    def generate_qa_pairs(self,
+                         text: str,
+                         num_pairs: int = 3,
+                         retries: int = 2) -> List[Dict[str, str]]:
+        """
+        Generate Q&A pairs from a text chunk using Gemini.
+        
+        Args:
+            text: Transcript chunk (any length, will be truncated if needed)
+            num_pairs: Target number of Q&A pairs (default: 3)
+            retries: Retry attempts on parse failure (default: 2)
         
         Returns:
-            List of {"question": ..., "answer": ...} dicts
+            List of {"question": str, "answer": str} dicts
+        
+        Raises:
+            Exception: If Gemini API fails after retries
         """
-        model, tokenizer, device = cls.load_model(model_name)
+        # Truncate to ~2000 chars to stay in free tier token limits
+        if len(text) > 2000:
+            text = text[:2000]
         
-        # Truncate if too long (T5 input limit)
-        max_input_length = 512
-        words = text.split()
-        if len(words) > max_input_length:
-            text = ' '.join(words[:max_input_length])
+        prompt = f"""From this transcript excerpt, generate exactly {num_pairs} high-quality flashcard Q&A pairs.
+
+Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
+{{
+  "pairs": [
+    {{
+      "question": "Clear, concise question",
+      "answer": "Detailed, accurate answer from the text"
+    }}
+  ]
+}}
+
+Transcript:
+{text}
+
+Generate only the JSON response, nothing else:"""
         
-        # Prepare prompt: ask T5 to generate questions
-        # Format: "generate questions: <text>"
-        prompt = f"generate questions: {text}"
+        for attempt in range(retries):
+            try:
+                response_text = self._generate_with_provider(prompt, self.provider)
+
+                pairs = self._parse_pairs(response_text, num_pairs)
+                if pairs:
+                    return pairs
+
+                if attempt < retries - 1:
+                    logger.warning(f"Parse failed on attempt {attempt + 1}, retrying...")
+
+            except Exception as e:
+                # If rate-limited, attempt fallback once before retrying
+                if self._is_rate_limit_error(e) and self._fallback_ready():
+                    logger.warning("Rate limit hit; switching to fallback provider.")
+                    try:
+                        response_text = self._generate_with_provider(prompt, self.fallback_provider)
+                        pairs = self._parse_pairs(response_text, num_pairs)
+                        if pairs:
+                            return pairs
+                    except Exception as fallback_error:
+                        logger.error(f"Fallback provider failed: {fallback_error}")
+
+                logger.error(f"Generation attempt {attempt + 1} failed: {e}")
+                if attempt == retries - 1:
+                    raise
         
+        return []
+
+    def _parse_pairs(self, response_text: str, num_pairs: int) -> List[Dict[str, str]]:
         try:
-            # Encode and generate
-            inputs = tokenizer.encode(prompt, return_tensors='pt', max_length=512, truncation=True)
-            inputs = inputs.to(device)
-            
-            outputs = model.generate(
-                inputs,
-                max_length=150,
-                num_beams=2,
-                temperature=0.9,
-                early_stopping=True
+            data = json.loads(response_text)
+            pairs = data.get('pairs', [])
+            if pairs:
+                return pairs[:num_pairs]
+        except json.JSONDecodeError:
+            # Try to extract JSON if wrapped in markdown
+            if '```json' in response_text:
+                json_str = response_text.split('```json')[1].split('```')[0]
+            elif '```' in response_text:
+                json_str = response_text.split('```')[1].split('```')[0]
+            else:
+                json_str = response_text
+
+            data = json.loads(json_str)
+            pairs = data.get('pairs', [])
+            if pairs:
+                return pairs[:num_pairs]
+
+        return []
+
+    def _generate_with_provider(self, prompt: str, provider: str) -> str:
+        if provider == "gemini":
+            if not self.gemini_model:
+                raise ValueError("Gemini model not configured.")
+            response = self.gemini_model.generate_content(prompt)
+            return response.text
+
+        if provider == "groq":
+            if not self.groq_client:
+                raise ValueError("Groq client not configured.")
+            response = self.groq_client.chat.completions.create(
+                model=self.groq_model_name,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": prompt}
+                ]
             )
-            
-            generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-            
-            # Parse output into Q&A pairs (simple heuristic)
-            # T5 might generate "question 1: ... answer 1: ..." pattern
-            pairs = []
-            lines = generated_text.split('.')
-            
-            # Create placeholder Q&A pairs from generated content
-            for i, line in enumerate(lines[:num_pairs]):
-                if line.strip():
-                    pairs.append({
-                        'question': f"Concept {i+1}: {line.strip()[:100]}?",
-                        'answer': f"Generated from source text."
-                    })
-            
-            return pairs if pairs else _generate_fallback_pairs(text, num_pairs)
+            return response.choices[0].message.content
+
+        raise ValueError(f"Unsupported provider: {provider}")
+
+    def _is_rate_limit_error(self, error: Exception) -> bool:
+        message = str(error).lower()
+        return "429" in message or "rate limit" in message or "quota" in message
+
+    def _fallback_ready(self) -> bool:
+        return self.fallback_provider in {"gemini", "groq"} and (
+            (self.fallback_provider == "gemini" and self.gemini_model) or
+            (self.fallback_provider == "groq" and self.groq_client)
+        )
+    
+    def generate_from_chunks(self,
+                            chunks: List[str],
+                            cards_per_chunk: int = 3) -> List[Dict[str, str]]:
+        """
+        Generate flashcards from a list of text chunks.
+        Respects Gemini free tier rate limits (15 req/min = 4 sec sleep).
         
-        except Exception as e:
-            logger.error(f"T5 generation failed: {e}")
-            return _generate_fallback_pairs(text, num_pairs)
-    
-    @classmethod
-    def unload_model(cls):
-        """Clear cached model to free memory."""
-        cls._model = None
-        cls._tokenizer = None
-
-
-def _generate_fallback_pairs(text: str, num_pairs: int) -> List[Dict[str, str]]:
-    """
-    Generate simple Q&A pairs as fallback when T5 fails.
-    Uses keyword extraction from text.
-    """
-    import re
-    
-    sentences = text.split('. ')
-    pairs = []
-    
-    # Extract key nouns/concepts from sentences
-    for i, sentence in enumerate(sentences[:num_pairs]):
-        if len(sentence.split()) > 4:
-            # Simple heuristic: first noun/concept as question basis
-            words = sentence.strip().split()
-            concept = ' '.join(words[:3])
+        Args:
+            chunks: List of text chunks
+            cards_per_chunk: Flashcards to generate per chunk (default: 3)
+        
+        Returns:
+            List of all generated flashcards
+        """
+        all_cards = []
+        
+        for i, chunk in enumerate(chunks):
+            logger.info(f"Processing chunk {i + 1}/{len(chunks)}...")
+            try:
+                cards = self.generate_qa_pairs(chunk, num_pairs=cards_per_chunk)
+                # Add chunk index to each card
+                for card in cards:
+                    card['chunk_index'] = i
+                all_cards.extend(cards)
+            except Exception as e:
+                logger.error(f"Failed to generate cards for chunk {i}: {e}")
             
-            pairs.append({
-                'question': f"What is {concept}?",
-                'answer': sentence.strip()[:150]
-            })
-    
-    return pairs
+            # Rate limiting: 4 second sleep between requests (15 req/min limit)
+            if i < len(chunks) - 1:
+                time.sleep(4)
+        
+        return all_cards
+
+
+# Backward compatibility alias
+T5GeneratorService = FlashcardGenerator
