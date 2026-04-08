@@ -3,6 +3,7 @@ Question classifier using DistilBERT zero-shot classification.
 Classifies generated questions by difficulty, type, and topic.
 """
 import logging
+import os
 from typing import List, Dict
 
 from transformers import pipeline
@@ -21,9 +22,11 @@ class QuestionClassifier:
     def __init__(self):
         """Initialize DistilBERT zero-shot classifier (cached)."""
         try:
+            hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")
             self.classifier = pipeline(
                 "zero-shot-classification",
-                model="distilbert-base-uncased-mnli"
+                model="distilbert-base-uncased-mnli",
+                token=hf_token
             )
             logger.info("Loaded DistilBERT classifier")
         except Exception as e:

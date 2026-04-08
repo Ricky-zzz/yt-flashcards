@@ -30,7 +30,7 @@ class FlashcardGenerator:
     
     def __init__(self,
                  api_key: Optional[str] = None,
-                 model: str = "gemini-2.0-flash",
+                 model: str = "gemini-flash-latest",
                  provider: Optional[str] = None,
                  fallback_provider: Optional[str] = None):
         """
@@ -38,13 +38,13 @@ class FlashcardGenerator:
         
         Args:
             api_key: Google API key (defaults to GEMINI_API_KEY env var)
-            model: Model to use (default: gemini-2.0-flash)
+            model: Model to use (default: gemini-flash-latest)
         """
         self.provider = (provider or os.getenv("LLM_PROVIDER") or "gemini").lower()
         self.fallback_provider = (fallback_provider or os.getenv("LLM_FALLBACK_PROVIDER") or "groq").lower()
 
         self.gemini_api_key = api_key or os.getenv('GEMINI_API_KEY')
-        self.gemini_model_name = model or os.getenv("GEMINI_MODEL") or "gemini-2.0-flash"
+        self.gemini_model_name = model or os.getenv("GEMINI_MODEL") or "gemini-flash-latest"
         self.groq_api_key = os.getenv("GROQ_API_KEY")
         self.groq_model_name = os.getenv("GROQ_MODEL") or "llama-3.3-70b-versatile"
 
@@ -162,8 +162,13 @@ Generate only the JSON response, nothing else:"""
         if provider == "gemini":
             if not self.gemini_model:
                 raise ValueError("Gemini model not configured.")
-            response = self.gemini_model.generate_content(prompt)
-            return response.text
+            try:
+                response = self.gemini_model.generate_content(prompt)
+                return response.text
+            except Exception as e:
+                # Log full error details to help diagnose quota/enablement issues.
+                logger.error("Gemini generation failed: %s", e, exc_info=True)
+                raise
 
         if provider == "groq":
             if not self.groq_client:
