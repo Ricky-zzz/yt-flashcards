@@ -95,3 +95,60 @@ def get_transcript_with_timestamps(video_url: str, language: str = 'en') -> List
         {'text': snippet.text, 'timestamp': snippet.start}
         for snippet in transcript.snippets
     ]
+
+
+# Alias for consistency
+def extract_transcript(url: str, language: str = 'en') -> str:
+    """
+    Alias for get_transcript for consistency with pipeline.
+    
+    Args:
+        url: YouTube URL or video ID
+        language: Preferred language code (default: 'en')
+        
+    Returns:
+        Full transcript as a single concatenated string
+    """
+    return get_transcript(url, language)
+
+
+def get_video_title(video_url: str) -> str:
+    """
+    Extract video title from YouTube video.
+    
+    Try to use yt-dlp if available, otherwise return a generic title.
+    
+    Args:
+        video_url: YouTube URL or video ID
+        
+    Returns:
+        Video title or default string if extraction fails
+    """
+    try:
+        import yt_dlp
+        
+        with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            return info.get('title', 'Untitled Video')
+    except Exception:
+        # Fallback: try to extract from BeautifulSoup if available
+        try:
+            import requests
+            from bs4 import BeautifulSoup
+            
+            # Extract video ID
+            video_id = extract_video_id(video_url)
+            
+            # Use youtube.com embed metadata
+            embed_url = f"https://www.youtube.com/watch?v={video_id}"
+            response = requests.get(embed_url, timeout=5)
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            title_tag = soup.find('meta', {'name': 'title'})
+            if title_tag:
+                return title_tag.get('content', 'Untitled Video')
+        except Exception:
+            pass
+        
+        # Final fallback
+        return 'Untitled Video'

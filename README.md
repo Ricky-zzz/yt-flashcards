@@ -7,6 +7,7 @@ Convert YouTube videos into study flashcards using AI-powered transcript extract
 ### Prerequisites
 - Python 3.10 or higher
 - pip (Python package manager)
+- Node.js 18+ (for the Vue frontend)
 
 ### Setup (Windows/Mac/Linux)
 
@@ -42,6 +43,29 @@ pip install fastapi uvicorn youtube-transcript-api transformers torch nltk
 python -c "import fastapi; import youtube_transcript_api; import transformers; print('✓ All dependencies installed')"
 ```
 
+5. **Set environment variables**
+```bash
+# Create app/.env (see app/.env.example if provided)
+# Required:
+# GEMINI_API_KEY=your_key
+# GROQ_API_KEY=your_key (optional fallback)
+# HF_TOKEN=your_hf_token (optional)
+```
+
+6. **Run the API server**
+```bash
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
+```
+
+7. **Install and run the frontend**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open the UI at http://localhost:5173
+
 ## Project Structure
 
 ```
@@ -53,7 +77,7 @@ yt_transcript/
 │   │   ├── chunker.py          # Semantic text chunking
 │   │   └── generator.py        # Q&A pair generation
 │   ├── routes/                 # API endpoints (Phase 2)
-│   ├── schemas.py              # Data models (Phase 2)
+│   ├── schemas/                # Pydantic models (Phase 2)
 │   └── main.py                 # FastAPI app (Phase 2)
 ├── tests/
 │   └── pipeline_test.py         # End-to-end pipeline testing
@@ -153,15 +177,19 @@ YouTube URL
 JSON Output
 ```
 
-## Next Steps: Phase 2
+## Current API
+
+- POST /api/v1/generate
+- GET /health
+
+## Next Steps: Phase 3
 
 See [PHASE2.md](PHASE2.md) for detailed Phase 2 roadmap.
 
 **TL;DR:**
-- Build FastAPI API endpoint
-- Add request/response schemas
-- Create Swagger UI for testing
-- Integrate better Q&A model (Mistral or ChatGPT)
+- Add authentication (users own flashcard sets)
+- Persist flashcards to a database (SQLite for dev)
+- Then refine frontend and backend UX
 
 ## Troubleshooting
 
@@ -179,9 +207,8 @@ See [PHASE2.md](PHASE2.md) for detailed Phase 2 roadmap.
 
 ## Future Phases
 
-- **Phase 2:** FastAPI REST API
-- **Phase 3:** PostgreSQL database + user authentication
-- **Phase 4:** React frontend
+- **Phase 3:** Auth + database (SQLite dev, Postgres prod)
+- **Phase 4:** Frontend polish + sharing/export
 - **Phase 5:** Flashcard review & spaced repetition algorithms
 
 ## Contributing
