@@ -8,6 +8,13 @@ from .flashcard import (
     ErrorDetail,
     HealthResponse,
 )
+from .auth import (
+    RegisterRequest,
+    LoginRequest,
+    UserOut,
+    AuthResponseData,
+    AuthResponse,
+)
 
 __all__ = [
     "GenerateRequest",
@@ -17,4 +24,9 @@ __all__ = [
     "GenerateMetadata",
     "ErrorDetail",
     "HealthResponse",
+    "RegisterRequest",
+    "LoginRequest",
+    "UserOut",
+    "AuthResponseData",
+    "AuthResponse",
 ]
