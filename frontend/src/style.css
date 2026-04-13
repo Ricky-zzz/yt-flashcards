@@ -10,7 +10,7 @@
   }
 
   body {
-    @apply bg-[#0b0e13] text-slate-100 antialiased;
+    @apply bg-[#f8fafc] text-slate-900 antialiased;
   }
 }
 

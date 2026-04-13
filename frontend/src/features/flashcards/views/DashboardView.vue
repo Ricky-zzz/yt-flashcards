@@ -166,7 +166,7 @@ const handleSignOut = () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#0b0e13] text-slate-100">
+  <div class="min-h-screen bg-[#f8fafc] text-slate-900">
     <div class="flex min-h-screen flex-col md:flex-row">
       <Sidebar
         :sets="sets"
@@ -178,21 +178,23 @@ const handleSignOut = () => {
       />
 
       <main class="relative flex-1">
-        <div class="pointer-events-none absolute right-0 top-0 h-72 w-72 rounded-full bg-[radial-gradient(circle,_rgba(251,191,36,0.2),_transparent_65%)] blur-3xl"></div>
-        <div class="pointer-events-none absolute left-10 top-20 h-80 w-80 rounded-full bg-[radial-gradient(circle,_rgba(16,185,129,0.18),_transparent_70%)] blur-3xl"></div>
+        <div class="pointer-events-none absolute right-0 top-0 h-72 w-72 rounded-full bg-[radial-gradient(circle,_rgba(15,23,42,0.06),_transparent_65%)] blur-3xl"></div>
+        <div class="pointer-events-none absolute left-10 top-20 h-80 w-80 rounded-full bg-[radial-gradient(circle,_rgba(148,163,184,0.12),_transparent_70%)] blur-3xl"></div>
 
         <div class="mx-auto flex max-w-5xl flex-col gap-8 px-6 py-10">
           <header class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div class="animate-fade">
-              <p class="text-xs uppercase tracking-[0.35em] text-emerald-300">Studio</p>
-              <h1 class="text-3xl font-semibold md:text-4xl">Make study cards from any video in minutes.</h1>
-              <p class="mt-2 text-sm text-slate-400">
+              <p class="text-xs uppercase tracking-[0.35em] text-slate-500">Studio</p>
+              <h1 class="text-3xl font-semibold text-slate-900 md:text-4xl">
+                Make study cards from any video in minutes.
+              </h1>
+              <p class="mt-2 text-sm text-slate-600">
                 Paste a YouTube link, generate clean Q&A cards, and manage them like a workspace.
               </p>
             </div>
             <button
               type="button"
-              class="rounded-full border border-slate-800 px-4 py-2 text-xs uppercase tracking-[0.2em] text-slate-200 transition hover:border-emerald-400"
+              class="rounded-full border border-slate-300 px-4 py-2 text-xs uppercase tracking-[0.2em] text-slate-700 transition hover:border-slate-400"
               @click="handleSignOut"
             >
               Sign out
