@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routes import auth_router, generate_router
+from app.routes import auth_router, generate_router, decks_router, reviews_router
 from app.schemas import HealthResponse
 
 # Load environment variables from .env
@@ -40,6 +40,8 @@ app.add_middleware(
 # Include routes
 app.include_router(generate_router)
 app.include_router(auth_router)
+app.include_router(decks_router)
+app.include_router(reviews_router)
 
 
 @app.get("/health", response_model=HealthResponse)

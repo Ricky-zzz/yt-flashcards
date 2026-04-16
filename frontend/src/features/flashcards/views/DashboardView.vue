@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Sidebar from '../components/Sidebar.vue'
 import GeneratePanel from '../components/GeneratePanel.vue'
@@ -7,9 +7,19 @@ import SetHeader from '../components/SetHeader.vue'
 import CardGrid from '../components/CardGrid.vue'
 import NewCardForm from '../components/NewCardForm.vue'
 import EmptyState from '../components/EmptyState.vue'
+import { getStoredUser, clearStoredUser } from '../../auth/services/authService'
+import {
+  listDecks,
+  createDeck,
+  updateDeck,
+  deleteDeck,
+  listCards,
+  createCard,
+  updateCard as updateCardApi,
+  deleteCard as deleteCardApi
+} from '../services/deckService'
 
 const API_BASE = 'http://127.0.0.1:8001/api/v1'
-const STORAGE_KEY = 'yt_flashcard_sets_v1'
 
 const router = useRouter()
 
@@ -18,6 +28,7 @@ const numPairs = ref(3)
 const maxChunks = ref(2)
 const showAdvanced = ref(false)
 
+const user = ref(null)
 const sets = ref([])
 const activeSetId = ref(null)
 
@@ -32,35 +43,71 @@ const activeSet = computed(() => sets.value.find((set) => set.id === activeSetId
 const activeMeta = computed(() => activeSet.value?.metadata || {})
 const canGenerate = computed(() => youtubeUrl.value.trim().length > 0 && !isLoading.value)
 
-const saveSets = () => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sets.value))
-}
+const mapDeck = (deck) => ({
+  id: deck.id,
+  title: deck.title,
+  createdAt: deck.created_at,
+  youtubeUrl: deck.source_url,
+  cardCount: deck.card_count ?? 0,
+  flashcards: [],
+  metadata: {
+    total_cards: deck.card_count ?? 0,
+    chunks_processed: 0,
+    processing_time: 0,
+    classification_skipped: false
+  }
+})
 
-watch(sets, saveSets, { deep: true })
+const mapCard = (card, meta = {}) => ({
+  id: card.id,
+  question: card.front,
+  answer: card.back,
+  topic: meta.topic || 'general',
+  question_type: meta.question_type || 'definition',
+  difficulty: meta.difficulty || 'medium',
+  chunk_index: meta.chunk_index ?? -1
+})
 
-const loadSets = () => {
-  const raw = localStorage.getItem(STORAGE_KEY)
-  if (!raw) return
+const loadDecks = async () => {
+  if (!user.value) return
   try {
-    const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) {
-      sets.value = parsed
-      activeSetId.value = parsed[0]?.id || null
+    const decks = await listDecks(user.value.id)
+    sets.value = decks.map(mapDeck)
+    activeSetId.value = sets.value[0]?.id || null
+    if (activeSetId.value) {
+      await loadCardsForDeck(activeSetId.value)
     }
-  } catch {
-    localStorage.removeItem(STORAGE_KEY)
+  } catch (err) {
+    errorMessage.value = err?.message || 'Failed to load decks.'
   }
 }
 
-onMounted(loadSets)
+const loadCardsForDeck = async (deckId) => {
+  const target = sets.value.find((set) => set.id === deckId)
+  if (!target) return
+  if (target.flashcards.length > 0) return
 
-const createId = () => {
-  if (crypto?.randomUUID) return crypto.randomUUID()
-  return `set-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  try {
+    const cards = await listCards(deckId)
+    target.flashcards = cards.map((card) => mapCard(card))
+    target.cardCount = cards.length
+    target.metadata.total_cards = cards.length
+  } catch (err) {
+    errorMessage.value = err?.message || 'Failed to load cards.'
+  }
 }
 
+onMounted(async () => {
+  user.value = getStoredUser()
+  if (!user.value) {
+    router.push('/login')
+    return
+  }
+  await loadDecks()
+})
+
 const handleGenerate = async () => {
-  if (!canGenerate.value) return
+  if (!canGenerate.value || !user.value) return
   errorMessage.value = ''
   isLoading.value = true
 
@@ -83,14 +130,22 @@ const handleGenerate = async () => {
       throw new Error(data?.message || 'Generation failed. Try again.')
     }
 
-    const newSet = {
-      id: createId(),
+    const deck = await createDeck({
       title: data.data.metadata.video_title || 'Untitled Video',
-      createdAt: new Date().toISOString(),
-      youtubeUrl: payload.youtube_url,
-      flashcards: data.data.flashcards || [],
-      metadata: data.data.metadata
-    }
+      userId: user.value.id,
+      sourceUrl: payload.youtube_url
+    })
+
+    const flashcards = data.data.flashcards || []
+    const createdCards = await Promise.all(
+      flashcards.map((card) => createCard(deck.id, { front: card.question, back: card.answer }))
+    )
+
+    const newSet = mapDeck(deck)
+    newSet.metadata = data.data.metadata
+    newSet.flashcards = createdCards.map((card, idx) => mapCard(card, flashcards[idx]))
+    newSet.cardCount = newSet.flashcards.length
+    newSet.metadata.total_cards = newSet.flashcards.length
 
     sets.value = [newSet, ...sets.value]
     activeSetId.value = newSet.id
@@ -102,9 +157,10 @@ const handleGenerate = async () => {
   }
 }
 
-const selectSet = (id) => {
+const selectSet = async (id) => {
   activeSetId.value = id
   showNewCard.value = false
+  await loadCardsForDeck(id)
 }
 
 const startNewSet = () => {
@@ -112,55 +168,89 @@ const startNewSet = () => {
   showNewCard.value = false
 }
 
-const deleteSet = (id) => {
+const deleteSet = async (id) => {
   if (!confirm('Delete this set?')) return
-  sets.value = sets.value.filter((set) => set.id !== id)
-  if (activeSetId.value === id) {
-    activeSetId.value = sets.value[0]?.id || null
+  try {
+    await deleteDeck(id)
+    sets.value = sets.value.filter((set) => set.id !== id)
+    if (activeSetId.value === id) {
+      activeSetId.value = sets.value[0]?.id || null
+    }
+  } catch (err) {
+    errorMessage.value = err?.message || 'Failed to delete set.'
   }
 }
 
-const renameSet = (id) => {
+const renameSet = async (id) => {
   const target = sets.value.find((set) => set.id === id)
   if (!target) return
   const nextTitle = prompt('Rename set', target.title)
-  if (nextTitle) target.title = nextTitle
+  if (!nextTitle) return
+  try {
+    const updated = await updateDeck(id, { title: nextTitle })
+    target.title = updated.title
+  } catch (err) {
+    errorMessage.value = err?.message || 'Failed to rename set.'
+  }
 }
 
-const addManualCard = () => {
+const addManualCard = async () => {
   if (!activeSet.value) return
   if (!newQuestion.value.trim() || !newAnswer.value.trim()) return
 
-  activeSet.value.flashcards.unshift({
-    question: newQuestion.value.trim(),
-    answer: newAnswer.value.trim(),
-    topic: 'custom',
-    question_type: 'manual',
-    difficulty: 'custom',
-    chunk_index: -1
-  })
+  try {
+    const created = await createCard(activeSet.value.id, {
+      front: newQuestion.value.trim(),
+      back: newAnswer.value.trim()
+    })
 
-  activeSet.value.metadata.total_cards = activeSet.value.flashcards.length
-  newQuestion.value = ''
-  newAnswer.value = ''
-  showNewCard.value = false
+    activeSet.value.flashcards.unshift(
+      mapCard(created, {
+        topic: 'custom',
+        question_type: 'manual',
+        difficulty: 'custom',
+        chunk_index: -1
+      })
+    )
+    activeSet.value.cardCount = activeSet.value.flashcards.length
+    activeSet.value.metadata.total_cards = activeSet.value.flashcards.length
+    newQuestion.value = ''
+    newAnswer.value = ''
+    showNewCard.value = false
+  } catch (err) {
+    errorMessage.value = err?.message || 'Failed to add card.'
+  }
 }
 
-const updateCard = (idx, question, answer) => {
+const updateCard = async (idx, question, answer) => {
   if (!activeSet.value) return
   const card = activeSet.value.flashcards[idx]
   if (!card) return
-  card.question = question
-  card.answer = answer
+  try {
+    const updated = await updateCardApi(card.id, { front: question, back: answer })
+    card.question = updated.front
+    card.answer = updated.back
+  } catch (err) {
+    errorMessage.value = err?.message || 'Failed to update card.'
+  }
 }
 
-const deleteCard = (idx) => {
+const deleteCard = async (idx) => {
   if (!activeSet.value) return
-  activeSet.value.flashcards.splice(idx, 1)
-  activeSet.value.metadata.total_cards = activeSet.value.flashcards.length
+  const card = activeSet.value.flashcards[idx]
+  if (!card) return
+  try {
+    await deleteCardApi(card.id)
+    activeSet.value.flashcards.splice(idx, 1)
+    activeSet.value.cardCount = activeSet.value.flashcards.length
+    activeSet.value.metadata.total_cards = activeSet.value.flashcards.length
+  } catch (err) {
+    errorMessage.value = err?.message || 'Failed to delete card.'
+  }
 }
 
 const handleSignOut = () => {
+  clearStoredUser()
   router.push('/login')
 }
 </script>
@@ -200,6 +290,10 @@ const handleSignOut = () => {
               Sign out
             </button>
           </header>
+
+          <p v-if="errorMessage && activeSet" class="text-sm text-rose-600">
+            {{ errorMessage }}
+          </p>
 
           <GeneratePanel
             v-if="!activeSet"

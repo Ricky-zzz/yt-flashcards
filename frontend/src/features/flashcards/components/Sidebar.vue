@@ -1,7 +1,7 @@
 <script setup>
 const props = defineProps({
   sets: { type: Array, default: () => [] },
-  activeSetId: { type: String, default: null }
+  activeSetId: { type: [String, Number], default: null }
 })
 
 const emit = defineEmits(['select', 'create', 'rename', 'delete'])
@@ -50,7 +50,7 @@ const emit = defineEmits(['select', 'create', 'rename', 'delete'])
             <div class="min-w-0">
               <p class="truncate text-sm font-semibold text-slate-900">{{ set.title }}</p>
               <p class="text-xs text-slate-500">
-                {{ set.flashcards.length }} cards · {{ new Date(set.createdAt).toLocaleDateString() }}
+                {{ set.cardCount ?? set.flashcards.length }} cards · {{ new Date(set.createdAt).toLocaleDateString() }}
               </p>
             </div>
             <div class="flex gap-2 opacity-0 transition group-hover:opacity-100">

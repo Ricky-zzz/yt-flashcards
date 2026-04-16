@@ -64,7 +64,7 @@ const handleSubmit = async () => {
       <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50">
         <div class="mb-6">
           <h2 class="text-2xl font-semibold text-slate-900">Register</h2>
-          <p class="mt-1 text-sm text-slate-500">Demo form only, no data is saved.</p>
+          <p class="mt-1 text-sm text-slate-500">Creates a local demo account.</p>
         </div>
 
         <form class="flex flex-col gap-4" @submit.prevent="handleSubmit">

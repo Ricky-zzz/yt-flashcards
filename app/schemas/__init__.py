@@ -15,6 +15,29 @@ from .auth import (
     AuthResponseData,
     AuthResponse,
 )
+from .deck import (
+    APIError,
+    DeckCreate,
+    DeckUpdate,
+    DeckOut,
+    DeckResponse,
+    DeckListResponse,
+    CardCreate,
+    CardUpdate,
+    CardOut,
+    CardResponse,
+    CardListResponse,
+)
+from .review import (
+    ReviewSessionCreate,
+    ReviewSessionOut,
+    ReviewAttemptCreate,
+    ReviewAttemptOut,
+    ReviewSessionResponse,
+    ReviewSessionListResponse,
+    ReviewAttemptResponse,
+    ReviewAttemptListResponse,
+)
 
 __all__ = [
     "GenerateRequest",
@@ -29,4 +52,23 @@ __all__ = [
     "UserOut",
     "AuthResponseData",
     "AuthResponse",
+    "APIError",
+    "DeckCreate",
+    "DeckUpdate",
+    "DeckOut",
+    "DeckResponse",
+    "DeckListResponse",
+    "CardCreate",
+    "CardUpdate",
+    "CardOut",
+    "CardResponse",
+    "CardListResponse",
+    "ReviewSessionCreate",
+    "ReviewSessionOut",
+    "ReviewAttemptCreate",
+    "ReviewAttemptOut",
+    "ReviewSessionResponse",
+    "ReviewSessionListResponse",
+    "ReviewAttemptResponse",
+    "ReviewAttemptListResponse",
 ]
