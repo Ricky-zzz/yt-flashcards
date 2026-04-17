@@ -35,7 +35,7 @@ pip install -r requirements.txt
 
 Or manually:
 ```bash
-pip install fastapi uvicorn youtube-transcript-api transformers torch nltk
+pip install fastapi uvicorn youtube-transcript-api transformers torch nltk yt-dlp browser-cookie3
 ```
 
 4. **Verify Installation**
@@ -200,6 +200,7 @@ See [PHASE2.md](PHASE2.md) for detailed Phase 2 roadmap.
 ### "No transcripts available"
 - Video must have captions enabled
 - Try another video first
+- If it still fails, ensure `yt-dlp` is installed for fallback subtitle fetching
 
 ### Slow performance
 - First run downloads T5 model (~500MB) - subsequent runs are instant

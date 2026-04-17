@@ -246,3 +246,54 @@ After Phase 2 works:
 - Subject/topic grouping
 
 See [PHASE3.md](PHASE3.md) (to be created)
+
+
+
+Yes, that's a great fallback — and honestly useful even when extraction works, since some users might want to paste from a lecture, podcast transcript, etc.
+
+The change is pretty minimal across 3 places:
+
+**1. Update your schema** to make `youtube_url` optional and add `transcript_text`:
+```python
+class GenerateRequest(BaseModel):
+    youtube_url: Optional[str] = None
+    transcript_text: Optional[str] = None
+    num_pairs: int = 3
+    max_chunks: Optional[int] = None
+
+    @model_validator(mode='after')
+    def check_input(self):
+        if not self.youtube_url and not self.transcript_text:
+            raise ValueError("Either youtube_url or transcript_text must be provided")
+        return self
+```
+
+**2. Update `generate.py`** to branch early:
+```python
+# Replace the transcript extraction block with this:
+if request.transcript_text:
+    transcript_text = request.transcript_text.strip()
+    if not transcript_text:
+        raise NoTranscriptAvailableError("Pasted transcript is empty")
+    video_title = "Pasted Transcript"
+    logger.info(f"Using pasted transcript: {len(transcript_text)} characters")
+else:
+    if not validate_youtube_url(request.youtube_url):
+        raise InvalidYouTubeURLError("Invalid YouTube URL")
+    logger.info(f"Generating flashcards for: {request.youtube_url}")
+    try:
+        transcript_text = extract_transcript(request.youtube_url)
+        ...
+    ...
+    video_title = get_video_title(request.youtube_url)
+```
+
+**3. On the frontend**, add a toggle — something like:
+
+```
+○ YouTube URL   ● Paste transcript
+```
+
+When "Paste transcript" is selected, show a `<textarea>` and send `{ transcript_text: "..." }` instead of `{ youtube_url: "..." }` in the request body.
+
+That's it. The rest of the pipeline (cleaning, chunking, generation) is completely unchanged since it just operates on a string regardless of where it came from.

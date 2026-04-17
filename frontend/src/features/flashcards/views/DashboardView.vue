@@ -24,6 +24,8 @@ const API_BASE = 'http://127.0.0.1:8001/api/v1'
 const router = useRouter()
 
 const youtubeUrl = ref('')
+const transcriptText = ref('')
+const inputMode = ref('url')
 const numPairs = ref(3)
 const maxChunks = ref(2)
 const showAdvanced = ref(false)
@@ -41,7 +43,13 @@ const newAnswer = ref('')
 
 const activeSet = computed(() => sets.value.find((set) => set.id === activeSetId.value) || null)
 const activeMeta = computed(() => activeSet.value?.metadata || {})
-const canGenerate = computed(() => youtubeUrl.value.trim().length > 0 && !isLoading.value)
+const canGenerate = computed(() => {
+  if (isLoading.value) return false
+  if (inputMode.value === 'transcript') {
+    return transcriptText.value.trim().length > 0
+  }
+  return youtubeUrl.value.trim().length > 0
+})
 
 const mapDeck = (deck) => ({
   id: deck.id,
@@ -62,9 +70,9 @@ const mapCard = (card, meta = {}) => ({
   id: card.id,
   question: card.front,
   answer: card.back,
-  topic: meta.topic || 'general',
-  question_type: meta.question_type || 'definition',
-  difficulty: meta.difficulty || 'medium',
+  topic: card.topic || meta.topic || 'general',
+  question_type: card.question_type || meta.question_type || 'definition',
+  difficulty: card.difficulty || meta.difficulty || 'medium',
   chunk_index: meta.chunk_index ?? -1
 })
 
@@ -113,7 +121,8 @@ const handleGenerate = async () => {
 
   try {
     const payload = {
-      youtube_url: youtubeUrl.value.trim(),
+      youtube_url: inputMode.value === 'url' ? youtubeUrl.value.trim() : null,
+      transcript_text: inputMode.value === 'transcript' ? transcriptText.value.trim() : null,
       num_pairs: Number(numPairs.value),
       max_chunks: Number(maxChunks.value)
     }
@@ -138,7 +147,15 @@ const handleGenerate = async () => {
 
     const flashcards = data.data.flashcards || []
     const createdCards = await Promise.all(
-      flashcards.map((card) => createCard(deck.id, { front: card.question, back: card.answer }))
+      flashcards.map((card) =>
+        createCard(deck.id, {
+          front: card.question,
+          back: card.answer,
+          difficulty: card.difficulty,
+          question_type: card.question_type,
+          topic: card.topic
+        })
+      )
     )
 
     const newSet = mapDeck(deck)
@@ -151,7 +168,14 @@ const handleGenerate = async () => {
     activeSetId.value = newSet.id
     showNewCard.value = false
   } catch (err) {
-    errorMessage.value = err?.message || 'Something went wrong.'
+    const rawMessage = err?.message || ''
+    const hintTriggers = ['transcript', 'caption', 'youtube url', 'fetch transcript', 'no transcript']
+    const lower = rawMessage.toLowerCase()
+    if (hintTriggers.some((hint) => lower.includes(hint))) {
+      errorMessage.value = 'Having trouble fetching captions. Paste a transcript instead.'
+    } else {
+      errorMessage.value = rawMessage || 'Something went wrong.'
+    }
   } finally {
     isLoading.value = false
   }
@@ -201,7 +225,10 @@ const addManualCard = async () => {
   try {
     const created = await createCard(activeSet.value.id, {
       front: newQuestion.value.trim(),
-      back: newAnswer.value.trim()
+      back: newAnswer.value.trim(),
+      difficulty: 'custom',
+      question_type: 'manual',
+      topic: 'custom'
     })
 
     activeSet.value.flashcards.unshift(
@@ -297,7 +324,9 @@ const handleSignOut = () => {
 
           <GeneratePanel
             v-if="!activeSet"
+            v-model:input-mode="inputMode"
             v-model:youtube-url="youtubeUrl"
+            v-model:transcript-text="transcriptText"
             v-model:num-pairs="numPairs"
             v-model:max-chunks="maxChunks"
             :show-advanced="showAdvanced"

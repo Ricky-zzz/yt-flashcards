@@ -39,12 +39,18 @@ class CardCreate(BaseModel):
     """Create card payload."""
     front: str = Field(..., min_length=1)
     back: str = Field(..., min_length=1)
+    difficulty: Optional[str] = None
+    question_type: Optional[str] = None
+    topic: Optional[str] = None
 
 
 class CardUpdate(BaseModel):
     """Update card payload."""
     front: Optional[str] = Field(default=None, min_length=1)
     back: Optional[str] = Field(default=None, min_length=1)
+    difficulty: Optional[str] = None
+    question_type: Optional[str] = None
+    topic: Optional[str] = None
 
 
 class CardOut(BaseModel):
@@ -53,6 +59,9 @@ class CardOut(BaseModel):
     deck_id: int
     front: str
     back: str
+    difficulty: Optional[str] = None
+    question_type: Optional[str] = None
+    topic: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

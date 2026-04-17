@@ -168,7 +168,14 @@ def create_card(deck_id: int, request: CardCreate, db: Session = Depends(get_db)
             error=APIError(type="DeckNotFound", details="Deck does not exist"),
         )
 
-    card = Card(deck_id=deck_id, front=request.front, back=request.back)
+    card = Card(
+        deck_id=deck_id,
+        front=request.front,
+        back=request.back,
+        difficulty=request.difficulty,
+        question_type=request.question_type,
+        topic=request.topic,
+    )
     db.add(card)
     db.commit()
     db.refresh(card)
@@ -197,6 +204,12 @@ def update_card(card_id: int, request: CardUpdate, db: Session = Depends(get_db)
         card.front = request.front
     if request.back is not None:
         card.back = request.back
+    if request.difficulty is not None:
+        card.difficulty = request.difficulty
+    if request.question_type is not None:
+        card.question_type = request.question_type
+    if request.topic is not None:
+        card.topic = request.topic
 
     db.commit()
     db.refresh(card)
@@ -251,6 +264,9 @@ def _card_out(card: Card) -> CardOut:
         deck_id=card.deck_id,
         front=card.front,
         back=card.back,
+        difficulty=card.difficulty,
+        question_type=card.question_type,
+        topic=card.topic,
         created_at=card.created_at,
         updated_at=card.updated_at,
     )

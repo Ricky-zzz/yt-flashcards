@@ -1,12 +1,6 @@
-"""
-Question classifier using DistilBERT zero-shot classification.
-Classifies generated questions by difficulty, type, and topic.
-"""
+"""Question classifier placeholder for local model usage."""
 import logging
-import os
 from typing import List, Dict
-
-from transformers import pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -20,18 +14,9 @@ class QuestionClassifier:
     """
     
     def __init__(self):
-        """Initialize DistilBERT zero-shot classifier (cached)."""
-        try:
-            hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")
-            self.classifier = pipeline(
-                "zero-shot-classification",
-                model="distilbert-base-uncased-mnli",
-                token=hf_token
-            )
-            logger.info("Loaded DistilBERT classifier")
-        except Exception as e:
-            logger.error(f"Failed to load classifier: {e}")
-            self.classifier = None
+        """Disable classifier until a local model is added."""
+        self.classifier = None
+        logger.info("Classifier disabled; using default labels until a local model is added.")
     
     def classify_difficulty(self, question: str) -> str:
         """

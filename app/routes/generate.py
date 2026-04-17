@@ -1,7 +1,9 @@
 """Generate flashcards endpoint."""
+import csv
 import logging
 import os
 import time
+from pathlib import Path
 
 from fastapi import APIRouter
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
@@ -45,6 +47,31 @@ def validate_youtube_url(url: str) -> bool:
     return "youtube.com" in url or "youtu.be" in url
 
 
+def append_training_data(flashcards: list[FlashcardObject]) -> None:
+    output_path = Path(__file__).resolve().parents[2] / "training_data.csv"
+    file_exists = output_path.exists()
+
+    with output_path.open("a", newline="", encoding="utf-8") as csvfile:
+        writer = csv.DictWriter(
+            csvfile,
+            fieldnames=["question", "answer", "difficulty", "question_type", "topic", "chunk_index"],
+        )
+        if not file_exists:
+            writer.writeheader()
+
+        for card in flashcards:
+            writer.writerow(
+                {
+                    "question": card.question,
+                    "answer": card.answer,
+                    "difficulty": card.difficulty or "medium",
+                    "question_type": card.question_type or "definition",
+                    "topic": card.topic or "general",
+                    "chunk_index": card.chunk_index,
+                }
+            )
+
+
 @router.post("/generate", response_model=GenerateResponse)
 async def generate_flashcards(request: GenerateRequest) -> GenerateResponse:
     """Generate flashcards from a YouTube video."""
@@ -56,30 +83,37 @@ async def generate_flashcards(request: GenerateRequest) -> GenerateResponse:
     delay_seconds = float(os.getenv("CHUNK_DELAY_SECONDS", "0"))
 
     try:
-        if not validate_youtube_url(request.youtube_url):
-            raise InvalidYouTubeURLError(
-                "Invalid YouTube URL. Must contain 'youtube.com' or 'youtu.be'"
-            )
+        if request.transcript_text:
+            transcript_text = request.transcript_text.strip()
+            if not transcript_text:
+                raise NoTranscriptAvailableError("Pasted transcript is empty")
+            video_title = "Pasted Transcript"
+            logger.info(f"Using pasted transcript: {len(transcript_text)} characters")
+        else:
+            if not request.youtube_url or not validate_youtube_url(request.youtube_url):
+                raise InvalidYouTubeURLError(
+                    "Invalid YouTube URL. Must contain 'youtube.com' or 'youtu.be'"
+                )
 
-        logger.info(f"Generating flashcards for: {request.youtube_url}")
+            logger.info(f"Generating flashcards for: {request.youtube_url}")
 
-        try:
-            transcript_text = extract_transcript(request.youtube_url)
-            if not transcript_text or len(transcript_text.strip()) == 0:
-                raise NoTranscriptAvailableError("Video has no available transcript")
-            logger.info(f"Extracted {len(transcript_text)} characters from transcript")
-        except (TranscriptsDisabled, NoTranscriptFound) as e:
-            raise NoTranscriptAvailableError(
-                f"Video has no available transcript: {str(e)}"
-            )
-        except Exception as e:
-            raise TranscriptExtractionError(f"Failed to extract transcript: {str(e)}")
+            try:
+                transcript_text = extract_transcript(request.youtube_url)
+                if not transcript_text or len(transcript_text.strip()) == 0:
+                    raise NoTranscriptAvailableError("Video has no available transcript")
+                logger.info(f"Extracted {len(transcript_text)} characters from transcript")
+            except (TranscriptsDisabled, NoTranscriptFound) as e:
+                raise NoTranscriptAvailableError(
+                    f"Video has no available transcript: {str(e)}"
+                )
+            except Exception as e:
+                raise TranscriptExtractionError(f"Failed to extract transcript: {str(e)}")
 
-        try:
-            video_title = get_video_title(request.youtube_url)
-        except Exception as e:
-            logger.warning(f"Could not extract video title: {e}")
-            video_title = "Untitled Video"
+            try:
+                video_title = get_video_title(request.youtube_url)
+            except Exception as e:
+                logger.warning(f"Could not extract video title: {e}")
+                video_title = "Untitled Video"
 
         cleaned_text = clean_text(transcript_text)
         logger.info(f"Cleaned text: {len(cleaned_text)} characters")
@@ -131,6 +165,11 @@ async def generate_flashcards(request: GenerateRequest) -> GenerateResponse:
 
         if not all_flashcards:
             raise ModelError("Failed to generate any flashcards from the video")
+
+        try:
+            append_training_data(all_flashcards)
+        except Exception as e:
+            logger.warning("Failed to append training data: %s", e)
 
         processing_time = time.time() - start_time
 

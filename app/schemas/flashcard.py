@@ -1,19 +1,27 @@
 """Pydantic schemas for request/response validation."""
-from pydantic import BaseModel, HttpUrl, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 
 class GenerateRequest(BaseModel):
     """Request schema for /api/v1/generate endpoint."""
-    youtube_url: str = Field(..., description="YouTube URL")
+    youtube_url: Optional[str] = Field(default=None, description="YouTube URL")
+    transcript_text: Optional[str] = Field(default=None, description="Pasted transcript text")
     num_pairs: int = Field(default=5, ge=1, le=50, description="Number of Q&A pairs per chunk")
     max_chunks: Optional[int] = Field(default=None, description="Max chunks to process (None = all)")
+
+    @model_validator(mode="after")
+    def check_input(self):
+        if not self.youtube_url and not self.transcript_text:
+            raise ValueError("Either youtube_url or transcript_text must be provided")
+        return self
 
     class Config:
         json_schema_extra = {
             "example": {
                 "youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                "transcript_text": None,
                 "num_pairs": 5,
                 "max_chunks": 10
             }
