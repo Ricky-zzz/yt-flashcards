@@ -5,9 +5,6 @@ const props = defineProps({
   inputMode: { type: String, default: 'url' },
   youtubeUrl: { type: String, default: '' },
   transcriptText: { type: String, default: '' },
-  numPairs: { type: Number, default: 3 },
-  maxChunks: { type: Number, default: 2 },
-  showAdvanced: { type: Boolean, default: false },
   isLoading: { type: Boolean, default: false },
   canGenerate: { type: Boolean, default: false },
   errorMessage: { type: String, default: '' }
@@ -17,9 +14,6 @@ const emit = defineEmits([
   'update:inputMode',
   'update:youtubeUrl',
   'update:transcriptText',
-  'update:numPairs',
-  'update:maxChunks',
-  'toggle-advanced',
   'generate'
 ])
 
@@ -38,15 +32,6 @@ const modelTranscript = computed({
   set: (val) => emit('update:transcriptText', val)
 })
 
-const modelPairs = computed({
-  get: () => props.numPairs,
-  set: (val) => emit('update:numPairs', val)
-})
-
-const modelChunks = computed({
-  get: () => props.maxChunks,
-  set: (val) => emit('update:maxChunks', val)
-})
 </script>
 
 <template>
@@ -91,36 +76,7 @@ const modelChunks = computed({
         >
           {{ props.isLoading ? 'Generating...' : 'Generate flashcards' }}
         </button>
-        <button
-          class="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:border-slate-400"
-          @click="emit('toggle-advanced')"
-        >
-          {{ props.showAdvanced ? 'Hide' : 'Show' }} advanced
-        </button>
         <span v-if="props.isLoading" class="text-xs text-slate-500">This may take ~20s.</span>
-      </div>
-
-      <div v-if="props.showAdvanced" class="grid gap-4 md:grid-cols-2">
-        <div>
-          <label class="text-xs uppercase tracking-[0.2em] text-slate-500">Pairs per chunk</label>
-          <input
-            v-model.number="modelPairs"
-            type="number"
-            min="1"
-            max="10"
-            class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
-          />
-        </div>
-        <div>
-          <label class="text-xs uppercase tracking-[0.2em] text-slate-500">Max chunks</label>
-          <input
-            v-model.number="modelChunks"
-            type="number"
-            min="1"
-            max="10"
-            class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
-          />
-        </div>
       </div>
 
       <p v-if="props.errorMessage" class="text-sm text-rose-600">{{ props.errorMessage }}</p>

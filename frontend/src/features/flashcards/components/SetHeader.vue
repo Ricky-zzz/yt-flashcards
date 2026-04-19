@@ -5,7 +5,7 @@ const props = defineProps({
   metadata: { type: Object, default: () => ({}) }
 })
 
-const emit = defineEmits(['add-card'])
+const emit = defineEmits(['add-card', 'review'])
 </script>
 
 <template>
@@ -22,17 +22,17 @@ const emit = defineEmits(['add-card'])
       </div>
       <div class="flex items-center gap-3">
         <button
+          class="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-700 transition hover:border-slate-400"
+          @click="emit('review')"
+        >
+          Review
+        </button>
+        <button
           class="rounded-full bg-slate-900 px-4 py-2 text-sm text-white transition hover:bg-slate-800"
           @click="emit('add-card')"
         >
           Add card
         </button>
-        <span
-          class="rounded-full border border-slate-200 px-3 py-1 text-xs"
-          :class="props.metadata.classification_skipped ? 'text-amber-600' : 'text-slate-600'"
-        >
-          {{ props.metadata.classification_skipped ? 'Classifier skipped' : 'Classifier ok' }}
-        </span>
       </div>
     </div>
   </section>

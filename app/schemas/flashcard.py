@@ -8,8 +8,18 @@ class GenerateRequest(BaseModel):
     """Request schema for /api/v1/generate endpoint."""
     youtube_url: Optional[str] = Field(default=None, description="YouTube URL")
     transcript_text: Optional[str] = Field(default=None, description="Pasted transcript text")
-    num_pairs: int = Field(default=5, ge=1, le=50, description="Number of Q&A pairs per chunk")
-    max_chunks: Optional[int] = Field(default=None, description="Max chunks to process (None = all)")
+    num_pairs: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=10,
+        description="Number of Q&A pairs per chunk (optional)"
+    )
+    max_chunks: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=50,
+        description="Max chunks to process (optional)"
+    )
 
     @model_validator(mode="after")
     def check_input(self):

@@ -90,16 +90,23 @@ class FlashcardGenerator:
         if len(text) > 2000:
             text = text[:2000]
         
-        prompt = f"""From this transcript excerpt, generate exactly {num_pairs} high-quality flashcard Q&A pairs.
+        prompt = f"""From this transcript excerpt, generate exactly {num_pairs} flashcard Q&A pairs.
+
+Standards:
+- One idea per card. Do NOT ask two questions in one.
+- Keep questions short and direct.
+- Answers should be a single sentence or short phrase.
+- Prefer these question types: identification, definition, explanation, comparison, computation.
+- Avoid "and" or multi-part wording unless absolutely required.
 
 Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
 {{
-  "pairs": [
-    {{
-      "question": "Clear, concise question",
-      "answer": "Detailed, accurate answer from the text"
-    }}
-  ]
+    "pairs": [
+        {{
+            "question": "Clear, concise question",
+            "answer": "Short, accurate answer from the text"
+        }}
+    ]
 }}
 
 Transcript:

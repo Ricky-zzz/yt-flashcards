@@ -7,6 +7,7 @@ import SetHeader from '../components/SetHeader.vue'
 import CardGrid from '../components/CardGrid.vue'
 import NewCardForm from '../components/NewCardForm.vue'
 import EmptyState from '../components/EmptyState.vue'
+import ReviewDeck from '../components/ReviewDeck.vue'
 import { getStoredUser, clearStoredUser } from '../../auth/services/authService'
 import {
   listDecks,
@@ -26,9 +27,6 @@ const router = useRouter()
 const youtubeUrl = ref('')
 const transcriptText = ref('')
 const inputMode = ref('url')
-const numPairs = ref(3)
-const maxChunks = ref(2)
-const showAdvanced = ref(false)
 
 const user = ref(null)
 const sets = ref([])
@@ -40,6 +38,7 @@ const errorMessage = ref('')
 const showNewCard = ref(false)
 const newQuestion = ref('')
 const newAnswer = ref('')
+const reviewMode = ref(false)
 
 const activeSet = computed(() => sets.value.find((set) => set.id === activeSetId.value) || null)
 const activeMeta = computed(() => activeSet.value?.metadata || {})
@@ -123,8 +122,8 @@ const handleGenerate = async () => {
     const payload = {
       youtube_url: inputMode.value === 'url' ? youtubeUrl.value.trim() : null,
       transcript_text: inputMode.value === 'transcript' ? transcriptText.value.trim() : null,
-      num_pairs: Number(numPairs.value),
-      max_chunks: Number(maxChunks.value)
+      num_pairs: null,
+      max_chunks: null
     }
 
     const response = await fetch(`${API_BASE}/generate`, {
@@ -184,12 +183,14 @@ const handleGenerate = async () => {
 const selectSet = async (id) => {
   activeSetId.value = id
   showNewCard.value = false
+  reviewMode.value = false
   await loadCardsForDeck(id)
 }
 
 const startNewSet = () => {
   activeSetId.value = null
   showNewCard.value = false
+  reviewMode.value = false
 }
 
 const deleteSet = async (id) => {
@@ -247,6 +248,21 @@ const addManualCard = async () => {
   } catch (err) {
     errorMessage.value = err?.message || 'Failed to add card.'
   }
+}
+
+const toggleNewCard = () => {
+  reviewMode.value = false
+  showNewCard.value = !showNewCard.value
+}
+
+const startReview = () => {
+  if (!activeSet.value) return
+  showNewCard.value = false
+  reviewMode.value = true
+}
+
+const stopReview = () => {
+  reviewMode.value = false
 }
 
 const updateCard = async (idx, question, answer) => {
@@ -327,13 +343,9 @@ const handleSignOut = () => {
             v-model:input-mode="inputMode"
             v-model:youtube-url="youtubeUrl"
             v-model:transcript-text="transcriptText"
-            v-model:num-pairs="numPairs"
-            v-model:max-chunks="maxChunks"
-            :show-advanced="showAdvanced"
             :is-loading="isLoading"
             :can-generate="canGenerate"
             :error-message="errorMessage"
-            @toggle-advanced="showAdvanced = !showAdvanced"
             @generate="handleGenerate"
           />
 
@@ -342,19 +354,26 @@ const handleSignOut = () => {
             :title="activeSet.title"
             :youtube-url="activeSet.youtubeUrl"
             :metadata="activeMeta"
-            @add-card="showNewCard = !showNewCard"
+            @add-card="toggleNewCard"
+            @review="startReview"
           />
 
           <NewCardForm
-            v-if="showNewCard && activeSet"
+            v-if="showNewCard && activeSet && !reviewMode"
             v-model:question="newQuestion"
             v-model:answer="newAnswer"
             @close="showNewCard = false"
             @save="addManualCard"
           />
 
+          <ReviewDeck
+            v-if="activeSet && reviewMode"
+            :cards="activeSet.flashcards"
+            @close="stopReview"
+          />
+
           <CardGrid
-            v-if="activeSet"
+            v-else-if="activeSet"
             :cards="activeSet.flashcards"
             @update-card="updateCard"
             @delete-card="deleteCard"

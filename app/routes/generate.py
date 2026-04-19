@@ -1,7 +1,9 @@
 """Generate flashcards endpoint."""
 import csv
 import logging
+import math
 import os
+import re
 import time
 from pathlib import Path
 
@@ -47,6 +49,33 @@ def validate_youtube_url(url: str) -> bool:
     return "youtube.com" in url or "youtu.be" in url
 
 
+def clamp(value: int, min_value: int, max_value: int) -> int:
+    return max(min_value, min(value, max_value))
+
+
+def estimate_target_cards(word_count: int, density: float) -> int:
+    words_per_minute = 130
+    minutes = max(1.0, word_count / words_per_minute)
+
+    if density < 0.25:
+        rate = 1.2
+    elif density < 0.4:
+        rate = 1.8
+    else:
+        rate = 2.4
+
+    target = round(minutes * rate)
+    return clamp(target, 8, 120)
+
+
+def estimate_density(text: str) -> float:
+    tokens = [token for token in re.findall(r"[a-zA-Z']+", text.lower()) if token]
+    if not tokens:
+        return 0.0
+    unique_ratio = len(set(tokens)) / len(tokens)
+    return clamp(unique_ratio, 0, 1)
+
+
 def append_training_data(flashcards: list[FlashcardObject]) -> None:
     output_path = Path(__file__).resolve().parents[2] / "training_data.csv"
     file_exists = output_path.exists()
@@ -81,6 +110,8 @@ async def generate_flashcards(request: GenerateRequest) -> GenerateResponse:
     classifier = get_classifier()
     classification_skipped = classifier.classifier is None
     delay_seconds = float(os.getenv("CHUNK_DELAY_SECONDS", "0"))
+    max_pairs_per_chunk = 6
+    max_chunks_limit = 20
 
     try:
         if request.transcript_text:
@@ -119,11 +150,39 @@ async def generate_flashcards(request: GenerateRequest) -> GenerateResponse:
         logger.info(f"Cleaned text: {len(cleaned_text)} characters")
 
         chunks = smart_chunk(cleaned_text, chunk_size=400, overlap=50)
+        total_chunks = len(chunks)
+
+        word_count = len(cleaned_text.split())
+        density = estimate_density(cleaned_text)
+        target_cards = estimate_target_cards(word_count, density)
 
         if request.max_chunks:
-            chunks = chunks[:request.max_chunks]
+            planned_chunks = min(request.max_chunks, total_chunks, max_chunks_limit)
+        else:
+            planned_chunks = min(
+                total_chunks,
+                max_chunks_limit,
+                max(1, math.ceil(target_cards / max_pairs_per_chunk))
+            )
 
-        logger.info(f"Created {len(chunks)} chunks")
+        if request.num_pairs:
+            pairs_per_chunk = clamp(request.num_pairs, 1, max_pairs_per_chunk)
+        else:
+            pairs_per_chunk = clamp(
+                math.ceil(target_cards / max(1, planned_chunks)),
+                1,
+                max_pairs_per_chunk
+            )
+
+        chunks = chunks[:planned_chunks]
+
+        logger.info(
+            "Created %s chunks, processing %s (target cards=%s, pairs/chunk=%s)",
+            total_chunks,
+            planned_chunks,
+            target_cards,
+            pairs_per_chunk,
+        )
 
         all_flashcards = []
 
@@ -133,7 +192,7 @@ async def generate_flashcards(request: GenerateRequest) -> GenerateResponse:
             try:
                 qa_pairs = generator.generate_qa_pairs(
                     chunk,
-                    num_pairs=request.num_pairs
+                    num_pairs=pairs_per_chunk
                 )
 
                 for qa in qa_pairs:

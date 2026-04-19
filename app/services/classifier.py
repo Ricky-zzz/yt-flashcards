@@ -9,7 +9,7 @@ class QuestionClassifier:
     """
     Classify flashcard questions across multiple dimensions:
     - Difficulty: easy, medium, hard
-    - Type: definition, explanation, application, synthesis, analysis
+    - Type: identification, definition, explanation, comparison, computation
     - Topic: extracted from context or general
     """
     
@@ -29,7 +29,7 @@ class QuestionClassifier:
             One of: 'easy', 'medium', 'hard'
         """
         if not self.classifier:
-            return 'medium'  # Default if classifier unavailable
+            return self._basic_difficulty(question)
         
         try:
             labels = ['easy', 'medium', 'hard']
@@ -50,7 +50,7 @@ class QuestionClassifier:
             One of: 'definition', 'explanation', 'application', 'synthesis', 'analysis'
         """
         if not self.classifier:
-            return 'definition'  # Default if classifier unavailable
+            return self._basic_question_type(question)
         
         try:
             labels = [
@@ -78,15 +78,20 @@ class QuestionClassifier:
         Returns:
             Topic name or 'general'
         """
-        # Simple heuristic: look for common STEM domains in question/context
+        if self._is_english_vocab(question):
+            return 'english'
+
+        # Broad-topic heuristic
         domains = {
-            'biology': ['cell', 'organism', 'dna', 'protein', 'photosynthesis', 'evolution'],
-            'chemistry': ['atom', 'molecule', 'element', 'reaction', 'bond', 'compound'],
-            'physics': ['force', 'energy', 'motion', 'wave', 'gravity', 'velocity'],
-            'math': ['number', 'equation', 'function', 'algebra', 'geometry', 'theorem'],
+            'english': ['synonym', 'antonym', 'vocabulary', 'definition', 'meaning'],
+            'math': ['number', 'equation', 'function', 'algebra', 'geometry', 'theorem', 'solve', 'calculate'],
+            'science': ['cell', 'organism', 'dna', 'protein', 'photosynthesis', 'evolution', 'atom', 'molecule', 'gravity', 'energy', 'planet', 'earth', 'sun', 'core', 'mantle', 'crust', 'physics', 'biology', 'chemistry'],
+            'technology': ['computer', 'software', 'algorithm', 'data', 'system', 'network', 'cpu', 'gpu', 'memory'],
             'history': ['war', 'revolution', 'empire', 'dynasty', 'century', 'period'],
-            'literature': ['author', 'novel', 'poem', 'character', 'theme', 'plot'],
-            'technology': ['computer', 'software', 'algorithm', 'data', 'system', 'network'],
+            'geography': ['continent', 'ocean', 'mountain', 'river', 'climate', 'latitude', 'longitude'],
+            'health': ['disease', 'health', 'medicine', 'virus', 'bacteria', 'anatomy'],
+            'business': ['market', 'economy', 'profit', 'revenue', 'finance', 'trade'],
+            'arts': ['art', 'music', 'painting', 'sculpture', 'dance', 'design'],
         }
         
         combined_text = (question + ' ' + context).lower()
@@ -96,6 +101,50 @@ class QuestionClassifier:
                 return topic
         
         return 'general'
+
+    def _is_english_vocab(self, question: str) -> bool:
+        text = question.lower()
+        triggers = [
+            'synonym',
+            'synonymous',
+            'antonym',
+            'means the same',
+            'another term',
+            'word means',
+            'word that means',
+            'term for',
+            'vocabulary'
+        ]
+        return any(trigger in text for trigger in triggers)
+
+    def _basic_question_type(self, question: str) -> str:
+        text = question.lower().strip()
+
+        if any(token in text for token in ['calculate', 'compute', 'solve', 'derive']):
+            return 'computation'
+        if any(token in text for token in ['compare', 'difference', 'different', 'contrast', 'versus']):
+            return 'comparison'
+        if text.startswith(('who', 'when', 'where', 'which')):
+            return 'identification'
+        if text.startswith(('what is', 'what are', 'define', 'identify')):
+            return 'definition'
+        if 'why' in text or text.startswith('how'):
+            return 'explanation'
+
+        return 'definition'
+
+    def _basic_difficulty(self, question: str) -> str:
+        text = question.lower()
+
+        hard_markers = ['compare', 'difference', 'explain', 'why', 'how', 'analyze']
+        easy_markers = ['what is', 'what are', 'define', 'identify', 'name']
+
+        if any(marker in text for marker in hard_markers):
+            return 'hard'
+        if any(marker in text for marker in easy_markers):
+            return 'easy'
+
+        return 'medium'
     
     def classify_qa_pair(self, question: str, answer: str, context: str = '') -> Dict[str, str]:
         """
