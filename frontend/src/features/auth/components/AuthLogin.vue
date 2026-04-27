@@ -1,8 +1,8 @@
 <script setup>
 import { ref } from 'vue'
-import { loginUser } from '../services/authService'
+import { clearStoredUser, loginUser } from '../services/authService'
 
-const emit = defineEmits(['login', 'go-register'])
+const emit = defineEmits(['login', 'go-register', 'guest'])
 
 const email = ref('')
 const password = ref('')
@@ -23,6 +23,11 @@ const handleSubmit = async () => {
   } finally {
     isLoading.value = false
   }
+}
+
+const handleGuest = () => {
+  clearStoredUser()
+  emit('guest')
 }
 </script>
 
@@ -104,6 +109,14 @@ const handleSubmit = async () => {
             @click="emit('go-register')"
           >
             Create an account
+          </button>
+
+          <button
+            type="button"
+            class="rounded-lg border border-dashed border-slate-300 px-4 py-2 text-sm text-slate-600 transition hover:border-slate-400 hover:text-slate-800"
+            @click="handleGuest"
+          >
+            Try as guest
           </button>
         </form>
       </div>

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import Sidebar from '../components/Sidebar.vue'
 import GeneratePanel from '../components/GeneratePanel.vue'
 import SetHeader from '../components/SetHeader.vue'
@@ -23,6 +23,10 @@ import {
 const API_BASE = 'http://127.0.0.1:8001/api/v1'
 
 const router = useRouter()
+const route = useRoute()
+
+let tempDeckId = -1
+let tempCardId = -1
 
 const youtubeUrl = ref('')
 const transcriptText = ref('')
@@ -42,6 +46,7 @@ const reviewMode = ref(false)
 
 const activeSet = computed(() => sets.value.find((set) => set.id === activeSetId.value) || null)
 const activeMeta = computed(() => activeSet.value?.metadata || {})
+const isGuest = computed(() => user.value?.isGuest === true)
 const canGenerate = computed(() => {
   if (isLoading.value) return false
   if (inputMode.value === 'transcript') {
@@ -105,6 +110,12 @@ const loadCardsForDeck = async (deckId) => {
 }
 
 onMounted(async () => {
+  const wantsGuest = route.query.guest === '1'
+  if (wantsGuest) {
+    user.value = { id: null, isGuest: true, full_name: 'Guest' }
+    return
+  }
+
   user.value = getStoredUser()
   if (!user.value) {
     router.push('/login')
@@ -138,28 +149,60 @@ const handleGenerate = async () => {
       throw new Error(data?.message || 'Generation failed. Try again.')
     }
 
-    const deck = await createDeck({
-      title: data.data.metadata.video_title || 'Untitled Video',
-      userId: user.value.id,
-      sourceUrl: payload.youtube_url
-    })
-
     const flashcards = data.data.flashcards || []
-    const createdCards = await Promise.all(
-      flashcards.map((card) =>
-        createCard(deck.id, {
-          front: card.question,
-          back: card.answer,
-          difficulty: card.difficulty,
-          question_type: card.question_type,
-          topic: card.topic
-        })
-      )
-    )
 
-    const newSet = mapDeck(deck)
+    let newSet
+    if (isGuest.value) {
+      const guestDeckId = `guest-deck-${Math.abs(tempDeckId--)}`
+      newSet = {
+        id: guestDeckId,
+        title: data.data.metadata.video_title || 'Untitled Video',
+        createdAt: new Date().toISOString(),
+        youtubeUrl: payload.youtube_url,
+        cardCount: 0,
+        flashcards: [],
+        metadata: {
+          total_cards: 0,
+          chunks_processed: 0,
+          processing_time: 0,
+          classification_skipped: false
+        }
+      }
+      newSet.metadata = data.data.metadata
+      newSet.flashcards = flashcards.map((card, idx) => ({
+        id: `guest-card-${Math.abs(tempCardId--)}-${idx}`,
+        question: card.question,
+        answer: card.answer,
+        topic: card.topic || 'general',
+        question_type: card.question_type || 'definition',
+        difficulty: card.difficulty || 'medium',
+        chunk_index: card.chunk_index ?? -1
+      }))
+    } else {
+      const deck = await createDeck({
+        title: data.data.metadata.video_title || 'Untitled Video',
+        userId: user.value.id,
+        sourceUrl: payload.youtube_url
+      })
+
+      const createdCards = await Promise.all(
+        flashcards.map((card) =>
+          createCard(deck.id, {
+            front: card.question,
+            back: card.answer,
+            difficulty: card.difficulty,
+            question_type: card.question_type,
+            topic: card.topic
+          })
+        )
+      )
+
+      newSet = mapDeck(deck)
+      newSet.metadata = data.data.metadata
+      newSet.flashcards = createdCards.map((card, idx) => mapCard(card, flashcards[idx]))
+    }
+
     newSet.metadata = data.data.metadata
-    newSet.flashcards = createdCards.map((card, idx) => mapCard(card, flashcards[idx]))
     newSet.cardCount = newSet.flashcards.length
     newSet.metadata.total_cards = newSet.flashcards.length
 
@@ -184,6 +227,7 @@ const selectSet = async (id) => {
   activeSetId.value = id
   showNewCard.value = false
   reviewMode.value = false
+  if (isGuest.value) return
   await loadCardsForDeck(id)
 }
 
@@ -195,6 +239,13 @@ const startNewSet = () => {
 
 const deleteSet = async (id) => {
   if (!confirm('Delete this set?')) return
+  if (isGuest.value) {
+    sets.value = sets.value.filter((set) => set.id !== id)
+    if (activeSetId.value === id) {
+      activeSetId.value = sets.value[0]?.id || null
+    }
+    return
+  }
   try {
     await deleteDeck(id)
     sets.value = sets.value.filter((set) => set.id !== id)
@@ -211,6 +262,10 @@ const renameSet = async (id) => {
   if (!target) return
   const nextTitle = prompt('Rename set', target.title)
   if (!nextTitle) return
+  if (isGuest.value) {
+    target.title = nextTitle
+    return
+  }
   try {
     const updated = await updateDeck(id, { title: nextTitle })
     target.title = updated.title
@@ -222,6 +277,24 @@ const renameSet = async (id) => {
 const addManualCard = async () => {
   if (!activeSet.value) return
   if (!newQuestion.value.trim() || !newAnswer.value.trim()) return
+
+  if (isGuest.value) {
+    activeSet.value.flashcards.unshift({
+      id: `guest-card-${Math.abs(tempCardId--)}`,
+      question: newQuestion.value.trim(),
+      answer: newAnswer.value.trim(),
+      topic: 'custom',
+      question_type: 'manual',
+      difficulty: 'custom',
+      chunk_index: -1
+    })
+    activeSet.value.cardCount = activeSet.value.flashcards.length
+    activeSet.value.metadata.total_cards = activeSet.value.flashcards.length
+    newQuestion.value = ''
+    newAnswer.value = ''
+    showNewCard.value = false
+    return
+  }
 
   try {
     const created = await createCard(activeSet.value.id, {
@@ -269,6 +342,11 @@ const updateCard = async (idx, question, answer) => {
   if (!activeSet.value) return
   const card = activeSet.value.flashcards[idx]
   if (!card) return
+  if (isGuest.value) {
+    card.question = question
+    card.answer = answer
+    return
+  }
   try {
     const updated = await updateCardApi(card.id, { front: question, back: answer })
     card.question = updated.front
@@ -282,6 +360,12 @@ const deleteCard = async (idx) => {
   if (!activeSet.value) return
   const card = activeSet.value.flashcards[idx]
   if (!card) return
+  if (isGuest.value) {
+    activeSet.value.flashcards.splice(idx, 1)
+    activeSet.value.cardCount = activeSet.value.flashcards.length
+    activeSet.value.metadata.total_cards = activeSet.value.flashcards.length
+    return
+  }
   try {
     await deleteCardApi(card.id)
     activeSet.value.flashcards.splice(idx, 1)
@@ -323,6 +407,9 @@ const handleSignOut = () => {
               </h1>
               <p class="mt-2 text-sm text-slate-600">
                 Paste a YouTube link, generate clean Q&A cards, and manage them like a workspace.
+              </p>
+              <p v-if="isGuest" class="mt-2 text-xs uppercase tracking-[0.2em] text-amber-700">
+                Guest mode: sets reset on page reload.
               </p>
             </div>
             <button

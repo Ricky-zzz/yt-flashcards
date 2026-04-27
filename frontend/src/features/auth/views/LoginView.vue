@@ -8,11 +8,15 @@ const handleLogin = () => {
   router.push('/dashboard')
 }
 
+const handleGuest = () => {
+  router.push({ path: '/dashboard', query: { guest: '1' } })
+}
+
 const goRegister = () => {
   router.push('/register')
 }
 </script>
 
 <template>
-  <AuthLogin @login="handleLogin" @go-register="goRegister" />
+  <AuthLogin @login="handleLogin" @go-register="goRegister" @guest="handleGuest" />
 </template>
