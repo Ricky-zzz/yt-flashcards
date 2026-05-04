@@ -5,7 +5,7 @@ const props = defineProps({
   metadata: { type: Object, default: () => ({}) }
 })
 
-const emit = defineEmits(['add-card', 'review'])
+const emit = defineEmits(['add-card', 'review', 'test'])
 </script>
 
 <template>
@@ -26,6 +26,12 @@ const emit = defineEmits(['add-card', 'review'])
           @click="emit('review')"
         >
           Review
+        </button>
+        <button
+          class="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-700 transition hover:border-slate-400"
+          @click="emit('test')"
+        >
+          Test
         </button>
         <button
           class="rounded-full bg-slate-900 px-4 py-2 text-sm text-white transition hover:bg-slate-800"

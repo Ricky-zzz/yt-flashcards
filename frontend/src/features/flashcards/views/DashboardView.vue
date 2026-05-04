@@ -8,6 +8,8 @@ import CardGrid from '../components/CardGrid.vue'
 import NewCardForm from '../components/NewCardForm.vue'
 import EmptyState from '../components/EmptyState.vue'
 import ReviewDeck from '../components/ReviewDeck.vue'
+import QuizDeck from '../components/QuizDeck.vue'
+import QuizHistory from '../components/QuizHistory.vue'
 import { getStoredUser, clearStoredUser } from '../../auth/services/authService'
 import {
   listDecks,
@@ -19,6 +21,7 @@ import {
   updateCard as updateCardApi,
   deleteCard as deleteCardApi
 } from '../services/deckService'
+import { startSession, submitAttempt, finishSession } from '../services/reviewService'
 
 const API_BASE = 'http://127.0.0.1:8001/api/v1'
 
@@ -43,6 +46,10 @@ const showNewCard = ref(false)
 const newQuestion = ref('')
 const newAnswer = ref('')
 const reviewMode = ref(false)
+const testMode = ref(false)
+const activeSessionId = ref(null)
+const quizMessage = ref('')
+const historyTick = ref(0)
 
 const activeSet = computed(() => sets.value.find((set) => set.id === activeSetId.value) || null)
 const activeMeta = computed(() => activeSet.value?.metadata || {})
@@ -209,6 +216,10 @@ const handleGenerate = async () => {
     sets.value = [newSet, ...sets.value]
     activeSetId.value = newSet.id
     showNewCard.value = false
+    reviewMode.value = false
+    testMode.value = false
+    activeSessionId.value = null
+    quizMessage.value = ''
   } catch (err) {
     const rawMessage = err?.message || ''
     const hintTriggers = ['transcript', 'caption', 'youtube url', 'fetch transcript', 'no transcript']
@@ -227,6 +238,9 @@ const selectSet = async (id) => {
   activeSetId.value = id
   showNewCard.value = false
   reviewMode.value = false
+  testMode.value = false
+  activeSessionId.value = null
+  quizMessage.value = ''
   if (isGuest.value) return
   await loadCardsForDeck(id)
 }
@@ -235,6 +249,10 @@ const startNewSet = () => {
   activeSetId.value = null
   showNewCard.value = false
   reviewMode.value = false
+  testMode.value = false
+  activeSessionId.value = null
+  quizMessage.value = ''
+  historyTick.value += 1
 }
 
 const deleteSet = async (id) => {
@@ -243,6 +261,10 @@ const deleteSet = async (id) => {
     sets.value = sets.value.filter((set) => set.id !== id)
     if (activeSetId.value === id) {
       activeSetId.value = sets.value[0]?.id || null
+      reviewMode.value = false
+      testMode.value = false
+      activeSessionId.value = null
+      quizMessage.value = ''
     }
     return
   }
@@ -251,6 +273,10 @@ const deleteSet = async (id) => {
     sets.value = sets.value.filter((set) => set.id !== id)
     if (activeSetId.value === id) {
       activeSetId.value = sets.value[0]?.id || null
+      reviewMode.value = false
+      testMode.value = false
+      activeSessionId.value = null
+      quizMessage.value = ''
     }
   } catch (err) {
     errorMessage.value = err?.message || 'Failed to delete set.'
@@ -325,6 +351,9 @@ const addManualCard = async () => {
 
 const toggleNewCard = () => {
   reviewMode.value = false
+  testMode.value = false
+  activeSessionId.value = null
+  quizMessage.value = ''
   showNewCard.value = !showNewCard.value
 }
 
@@ -332,10 +361,68 @@ const startReview = () => {
   if (!activeSet.value) return
   showNewCard.value = false
   reviewMode.value = true
+  testMode.value = false
+  activeSessionId.value = null
+  quizMessage.value = ''
 }
 
 const stopReview = () => {
   reviewMode.value = false
+}
+
+const startTest = async () => {
+  if (!activeSet.value) return
+  showNewCard.value = false
+  reviewMode.value = false
+  testMode.value = true
+  errorMessage.value = ''
+  quizMessage.value = ''
+
+  if (isGuest.value) {
+    activeSessionId.value = `guest-${Date.now()}`
+    return
+  }
+
+  if (!user.value) return
+
+  try {
+    await loadCardsForDeck(activeSet.value.id)
+    const session = await startSession(activeSet.value.id, user.value.id)
+    activeSessionId.value = session.id
+  } catch (err) {
+    testMode.value = false
+    activeSessionId.value = null
+    errorMessage.value = err?.message || 'Failed to start test session.'
+  }
+}
+
+const stopTest = () => {
+  testMode.value = false
+  activeSessionId.value = null
+}
+
+const handleQuizAttempt = async (record) => {
+  if (isGuest.value || !activeSessionId.value) return
+  try {
+    await submitAttempt(activeSessionId.value, record.cardId, record.userAnswer, record.isCorrect)
+  } catch (err) {
+    errorMessage.value = err?.message || 'Failed to save attempt.'
+  }
+}
+
+const handleQuizFinished = async ({ score, percent }) => {
+  if (isGuest.value) {
+    quizMessage.value = `Guest score: ${score} (${percent}%).`
+    return
+  }
+  if (!activeSessionId.value) return
+  try {
+    await finishSession(activeSessionId.value, score)
+    quizMessage.value = `Score saved: ${score} (${percent}%).`
+    historyTick.value += 1
+  } catch (err) {
+    errorMessage.value = err?.message || 'Failed to finish session.'
+  }
 }
 
 const updateCard = async (idx, question, answer) => {
@@ -425,6 +512,10 @@ const handleSignOut = () => {
             {{ errorMessage }}
           </p>
 
+          <p v-if="quizMessage && activeSet" class="text-sm text-emerald-600">
+            {{ quizMessage }}
+          </p>
+
           <GeneratePanel
             v-if="!activeSet"
             v-model:input-mode="inputMode"
@@ -443,6 +534,7 @@ const handleSignOut = () => {
             :metadata="activeMeta"
             @add-card="toggleNewCard"
             @review="startReview"
+            @test="startTest"
           />
 
           <NewCardForm
@@ -453,8 +545,26 @@ const handleSignOut = () => {
             @save="addManualCard"
           />
 
+          <QuizHistory
+            v-if="activeSet && !isGuest && !testMode && !reviewMode"
+            :deck-id="activeSet.id"
+            :user-id="user?.id"
+            :cards="activeSet.flashcards"
+            :refresh-key="historyTick"
+          />
+
+          <QuizDeck
+            v-if="activeSet && testMode"
+            :cards="activeSet.flashcards"
+            :session-id="activeSessionId"
+            :is-guest="isGuest"
+            @close="stopTest"
+            @attempt="handleQuizAttempt"
+            @finished="handleQuizFinished"
+          />
+
           <ReviewDeck
-            v-if="activeSet && reviewMode"
+            v-else-if="activeSet && reviewMode"
             :cards="activeSet.flashcards"
             @close="stopReview"
           />
