@@ -20,14 +20,15 @@ export const listDecks = async (userId) => {
   return data.data
 }
 
-export const createDeck = async ({ title, userId, sourceUrl }) => {
+export const createDeck = async ({ title, userId, sourceUrl, transcript }) => {
   const response = await fetch(`${API_BASE}/decks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       title,
       user_id: userId,
-      source_url: sourceUrl || null
+      source_url: sourceUrl || null,
+      transcript: transcript || null
     })
   })
 

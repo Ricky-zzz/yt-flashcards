@@ -10,6 +10,7 @@ import EmptyState from '../components/EmptyState.vue'
 import ReviewDeck from '../components/ReviewDeck.vue'
 import QuizDeck from '../components/QuizDeck.vue'
 import QuizHistory from '../components/QuizHistory.vue'
+import TranscriptModal from '../components/TranscriptModal.vue'
 import { getStoredUser, clearStoredUser } from '../../auth/services/authService'
 import {
   listDecks,
@@ -50,6 +51,8 @@ const testMode = ref(false)
 const activeSessionId = ref(null)
 const quizMessage = ref('')
 const historyTick = ref(0)
+const isHistoryCollapsed = ref(false)
+const showTranscriptModal = ref(false)
 
 const activeSet = computed(() => sets.value.find((set) => set.id === activeSetId.value) || null)
 const activeMeta = computed(() => activeSet.value?.metadata || {})
@@ -69,6 +72,7 @@ const mapDeck = (deck) => ({
   youtubeUrl: deck.source_url,
   cardCount: deck.card_count ?? 0,
   flashcards: [],
+  transcript: deck.transcript || '',
   metadata: {
     total_cards: deck.card_count ?? 0,
     chunks_processed: 0,
@@ -168,6 +172,7 @@ const handleGenerate = async () => {
         youtubeUrl: payload.youtube_url,
         cardCount: 0,
         flashcards: [],
+        transcript: data.data.transcript || payload.transcript_text || '',
         metadata: {
           total_cards: 0,
           chunks_processed: 0,
@@ -189,7 +194,8 @@ const handleGenerate = async () => {
       const deck = await createDeck({
         title: data.data.metadata.video_title || 'Untitled Video',
         userId: user.value.id,
-        sourceUrl: payload.youtube_url
+        sourceUrl: payload.youtube_url,
+        transcript: data.data.transcript
       })
 
       const createdCards = await Promise.all(
@@ -210,6 +216,7 @@ const handleGenerate = async () => {
     }
 
     newSet.metadata = data.data.metadata
+    newSet.transcript = data.data.transcript || payload.transcript_text || ''
     newSet.cardCount = newSet.flashcards.length
     newSet.metadata.total_cards = newSet.flashcards.length
 
@@ -467,25 +474,31 @@ const handleSignOut = () => {
   clearStoredUser()
   router.push('/login')
 }
+
+const handleViewTranscript = () => {
+  showTranscriptModal.value = true
+}
 </script>
 
 <template>
   <div class="min-h-screen bg-[#f8fafc] text-slate-900">
     <div class="flex min-h-screen flex-col md:flex-row">
-      <Sidebar
-        :sets="sets"
-        :active-set-id="activeSetId"
-        @select="selectSet"
-        @create="startNewSet"
-        @rename="renameSet"
-        @delete="deleteSet"
-      />
+      <div class="md:sticky md:top-0 h-screen overflow-y-auto md:border-r md:border-slate-200 flex flex-col bg-white">
+        <Sidebar
+          :sets="sets"
+          :active-set-id="activeSetId"
+          @select="selectSet"
+          @create="startNewSet"
+          @rename="renameSet"
+          @delete="deleteSet"
+        />
+      </div>
 
       <main class="relative flex-1">
         <div class="pointer-events-none absolute right-0 top-0 h-72 w-72 rounded-full bg-[radial-gradient(circle,_rgba(15,23,42,0.06),_transparent_65%)] blur-3xl"></div>
         <div class="pointer-events-none absolute left-10 top-20 h-80 w-80 rounded-full bg-[radial-gradient(circle,_rgba(148,163,184,0.12),_transparent_70%)] blur-3xl"></div>
 
-        <div class="mx-auto flex max-w-5xl flex-col gap-8 px-6 py-10">
+        <div class="mx-auto w-full max-w-6xl px-6 py-10">
           <header class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div class="animate-fade">
               <p class="text-xs uppercase tracking-[0.35em] text-slate-500">Studio</p>
@@ -508,77 +521,101 @@ const handleSignOut = () => {
             </button>
           </header>
 
-          <p v-if="errorMessage && activeSet" class="text-sm text-rose-600">
+          <p v-if="errorMessage && activeSet" class="mt-6 text-sm text-rose-600">
             {{ errorMessage }}
           </p>
 
-          <p v-if="quizMessage && activeSet" class="text-sm text-emerald-600">
+          <p v-if="quizMessage && activeSet" class="mt-4 text-sm text-emerald-600">
             {{ quizMessage }}
           </p>
 
-          <GeneratePanel
-            v-if="!activeSet"
-            v-model:input-mode="inputMode"
-            v-model:youtube-url="youtubeUrl"
-            v-model:transcript-text="transcriptText"
-            :is-loading="isLoading"
-            :can-generate="canGenerate"
-            :error-message="errorMessage"
-            @generate="handleGenerate"
-          />
+          <div class="mt-8 flex flex-col gap-8 lg:flex-row lg:items-start">
+            <div class="flex min-w-0 flex-1 flex-col gap-8">
+              <GeneratePanel
+                v-if="!activeSet"
+                v-model:input-mode="inputMode"
+                v-model:youtube-url="youtubeUrl"
+                v-model:transcript-text="transcriptText"
+                :is-loading="isLoading"
+                :can-generate="canGenerate"
+                :error-message="errorMessage"
+                @generate="handleGenerate"
+              />
 
-          <SetHeader
-            v-if="activeSet"
-            :title="activeSet.title"
-            :youtube-url="activeSet.youtubeUrl"
-            :metadata="activeMeta"
-            @add-card="toggleNewCard"
-            @review="startReview"
-            @test="startTest"
-          />
+              <SetHeader
+                v-if="activeSet"
+                :title="activeSet.title"
+                :youtube-url="activeSet.youtubeUrl"
+                :metadata="activeMeta"
+                :transcript="activeSet.transcript"
+                @add-card="toggleNewCard"
+                @review="startReview"
+                @test="startTest"
+                @view-transcript="handleViewTranscript"
+              />
 
-          <NewCardForm
-            v-if="showNewCard && activeSet && !reviewMode"
-            v-model:question="newQuestion"
-            v-model:answer="newAnswer"
-            @close="showNewCard = false"
-            @save="addManualCard"
-          />
+              <NewCardForm
+                v-if="showNewCard && activeSet && !reviewMode"
+                v-model:question="newQuestion"
+                v-model:answer="newAnswer"
+                @close="showNewCard = false"
+                @save="addManualCard"
+              />
 
-          <QuizHistory
-            v-if="activeSet && !isGuest && !testMode && !reviewMode"
-            :deck-id="activeSet.id"
-            :user-id="user?.id"
-            :cards="activeSet.flashcards"
-            :refresh-key="historyTick"
-          />
+              <QuizDeck
+                v-if="activeSet && testMode"
+                :cards="activeSet.flashcards"
+                :session-id="activeSessionId"
+                :is-guest="isGuest"
+                @close="stopTest"
+                @attempt="handleQuizAttempt"
+                @finished="handleQuizFinished"
+              />
 
-          <QuizDeck
-            v-if="activeSet && testMode"
-            :cards="activeSet.flashcards"
-            :session-id="activeSessionId"
-            :is-guest="isGuest"
-            @close="stopTest"
-            @attempt="handleQuizAttempt"
-            @finished="handleQuizFinished"
-          />
+              <ReviewDeck
+                v-else-if="activeSet && reviewMode"
+                :cards="activeSet.flashcards"
+                @close="stopReview"
+              />
 
-          <ReviewDeck
-            v-else-if="activeSet && reviewMode"
-            :cards="activeSet.flashcards"
-            @close="stopReview"
-          />
+              <CardGrid
+                v-else-if="activeSet"
+                :cards="activeSet.flashcards"
+                @update-card="updateCard"
+                @delete-card="deleteCard"
+              />
 
-          <CardGrid
-            v-else-if="activeSet"
-            :cards="activeSet.flashcards"
-            @update-card="updateCard"
-            @delete-card="deleteCard"
-          />
+              <EmptyState v-else />
+            </div>
 
-          <EmptyState v-else />
+            <aside
+              v-if="activeSet && !isGuest && !testMode && !reviewMode"
+              class="lg:sticky lg:top-6 lg:h-fit"
+            >
+              <div
+                class="w-full transition-all duration-300"
+                :class="isHistoryCollapsed ? 'lg:w-20' : 'lg:w-80'"
+              >
+                <QuizHistory
+                  :deck-id="activeSet.id"
+                  :user-id="user?.id"
+                  :cards="activeSet.flashcards"
+                  :refresh-key="historyTick"
+                  :collapsed="isHistoryCollapsed"
+                  @toggle-collapse="isHistoryCollapsed = !isHistoryCollapsed"
+                />
+              </div>
+            </aside>
+          </div>
         </div>
       </main>
     </div>
+
+    <TranscriptModal
+      v-if="showTranscriptModal && activeSet"
+      :transcript="activeSet.transcript"
+      :title="activeSet.title"
+      @close="showTranscriptModal = false"
+    />
   </div>
 </template>

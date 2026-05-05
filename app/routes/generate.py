@@ -243,7 +243,8 @@ async def generate_flashcards(request: GenerateRequest) -> GenerateResponse:
 
         response_data = GenerateResponseData(
             flashcards=all_flashcards,
-            metadata=metadata
+            metadata=metadata,
+            transcript=transcript_text
         )
 
         logger.info(

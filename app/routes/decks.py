@@ -33,6 +33,7 @@ def create_deck(request: DeckCreate, db: Session = Depends(get_db)) -> DeckRespo
         user_id=request.user_id,
         title=request.title,
         source_url=str(request.source_url) if request.source_url else None,
+        transcript=request.transcript,
     )
     db.add(deck)
     db.commit()

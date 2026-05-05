@@ -2,10 +2,11 @@
 const props = defineProps({
   title: { type: String, default: '' },
   youtubeUrl: { type: String, default: '' },
-  metadata: { type: Object, default: () => ({}) }
+  metadata: { type: Object, default: () => ({}) },
+  transcript: { type: String, default: '' }
 })
 
-const emit = defineEmits(['add-card', 'review', 'test'])
+const emit = defineEmits(['add-card', 'review', 'test', 'view-transcript'])
 </script>
 
 <template>
@@ -21,6 +22,13 @@ const emit = defineEmits(['add-card', 'review', 'test'])
         </p>
       </div>
       <div class="flex items-center gap-3">
+        <button
+          v-if="props.transcript"
+          class="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-700 transition hover:border-slate-400"
+          @click="emit('view-transcript')"
+        >
+          View transcript
+        </button>
         <button
           class="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-700 transition hover:border-slate-400"
           @click="emit('review')"

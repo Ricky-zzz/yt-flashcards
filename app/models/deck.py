@@ -1,7 +1,7 @@
 """Deck database model."""
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.db import Base
@@ -16,6 +16,7 @@ class Deck(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     title = Column(String(255), nullable=False)
     source_url = Column(String(2048), nullable=True)
+    transcript = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime, default=datetime.utcnow, nullable=False, onupdate=datetime.utcnow

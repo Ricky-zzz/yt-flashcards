@@ -16,12 +16,14 @@ class DeckCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     user_id: int
     source_url: Optional[HttpUrl] = None
+    transcript: Optional[str] = None
 
 
 class DeckUpdate(BaseModel):
     """Update deck payload."""
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)
     source_url: Optional[HttpUrl] = None
+    transcript: Optional[str] = None
 
 
 class DeckOut(BaseModel):
@@ -30,6 +32,7 @@ class DeckOut(BaseModel):
     user_id: int
     title: str
     source_url: Optional[str] = None
+    transcript: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     card_count: Optional[int] = None

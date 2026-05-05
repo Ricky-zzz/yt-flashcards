@@ -62,6 +62,7 @@ class GenerateResponseData(BaseModel):
     """Data payload for successful generate response."""
     flashcards: List[FlashcardObject]
     metadata: GenerateMetadata
+    transcript: Optional[str] = None
 
 
 class ErrorDetail(BaseModel):
