@@ -1,8 +1,10 @@
 """Deck and card endpoints."""
 import logging
+from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -24,6 +26,7 @@ from app.schemas.deck import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["decks"])
+UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads"
 
 
 @router.post("/decks", response_model=DeckResponse)
@@ -33,6 +36,8 @@ def create_deck(request: DeckCreate, db: Session = Depends(get_db)) -> DeckRespo
         user_id=request.user_id,
         title=request.title,
         source_url=str(request.source_url) if request.source_url else None,
+        source_type=request.source_type,
+        source_file=request.source_file,
         transcript=request.transcript,
     )
     db.add(deck)
@@ -103,6 +108,12 @@ def update_deck(deck_id: int, request: DeckUpdate, db: Session = Depends(get_db)
         deck.title = request.title
     if request.source_url is not None:
         deck.source_url = str(request.source_url)
+    if request.source_type is not None:
+        deck.source_type = request.source_type
+    if request.source_file is not None:
+        deck.source_file = request.source_file
+    if request.transcript is not None:
+        deck.transcript = request.transcript
 
     db.commit()
     db.refresh(deck)
@@ -112,6 +123,34 @@ def update_deck(deck_id: int, request: DeckUpdate, db: Session = Depends(get_db)
         data=_deck_out(deck, include_count=True),
         message="Deck updated",
         error=None,
+    )
+
+
+@router.get("/decks/{deck_id}/pdf")
+def get_deck_pdf(
+    deck_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """Serve a PDF associated with a deck to its owner."""
+    deck = db.query(Deck).filter(Deck.id == deck_id).first()
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    if deck.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if deck.source_type != "pdf" or not deck.source_file:
+        raise HTTPException(status_code=404, detail="PDF not available")
+
+    file_path = (UPLOAD_DIR / deck.source_file).resolve()
+    if file_path.suffix.lower() != ".pdf" or file_path.parent != UPLOAD_DIR.resolve():
+        raise HTTPException(status_code=400, detail="Invalid PDF path")
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    return FileResponse(
+        path=str(file_path),
+        media_type="application/pdf",
+        filename=deck.source_file,
     )
 
 
@@ -253,6 +292,9 @@ def _deck_out(deck: Deck, include_count: bool = False) -> DeckOut:
         user_id=deck.user_id,
         title=deck.title,
         source_url=deck.source_url,
+        source_type=deck.source_type,
+        source_file=deck.source_file,
+        transcript=deck.transcript,
         created_at=deck.created_at,
         updated_at=deck.updated_at,
         card_count=card_count,

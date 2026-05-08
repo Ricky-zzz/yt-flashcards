@@ -35,6 +35,7 @@ let tempCardId = -1
 const youtubeUrl = ref('')
 const transcriptText = ref('')
 const inputMode = ref('url')
+const pdfFile = ref(null)
 
 const user = ref(null)
 const sets = ref([])
@@ -62,6 +63,9 @@ const canGenerate = computed(() => {
   if (inputMode.value === 'transcript') {
     return transcriptText.value.trim().length > 0
   }
+  if (inputMode.value === 'pdf') {
+    return !!pdfFile.value
+  }
   return youtubeUrl.value.trim().length > 0
 })
 
@@ -70,6 +74,12 @@ const mapDeck = (deck) => ({
   title: deck.title,
   createdAt: deck.created_at,
   youtubeUrl: deck.source_url,
+  sourceType: deck.source_type || null,
+  sourceFile: deck.source_file || null,
+  pdfUrl:
+    deck.source_type === 'pdf' && deck.source_file && user.value?.id
+      ? `${API_BASE}/decks/${deck.id}/pdf?user_id=${user.value.id}`
+      : null,
   cardCount: deck.card_count ?? 0,
   flashcards: [],
   transcript: deck.transcript || '',
@@ -141,18 +151,42 @@ const handleGenerate = async () => {
   isLoading.value = true
 
   try {
-    const payload = {
-      youtube_url: inputMode.value === 'url' ? youtubeUrl.value.trim() : null,
-      transcript_text: inputMode.value === 'transcript' ? transcriptText.value.trim() : null,
-      num_pairs: null,
-      max_chunks: null
-    }
+    let response
+    let payload = null
+    let pdfFileName = null
 
-    const response = await fetch(`${API_BASE}/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
+    if (inputMode.value === 'pdf') {
+      if (!pdfFile.value) {
+        throw new Error('Please select a PDF file to upload.')
+      }
+      if (pdfFile.value.size > 10 * 1024 * 1024) {
+        throw new Error('PDF too large (max 10 MB).')
+      }
+      if (pdfFile.value.type && pdfFile.value.type !== 'application/pdf') {
+        throw new Error('Only PDF files are supported.')
+      }
+
+      const formData = new FormData()
+      formData.append('file', pdfFile.value)
+
+      response = await fetch(`${API_BASE}/generate/pdf`, {
+        method: 'POST',
+        body: formData
+      })
+    } else {
+      payload = {
+        youtube_url: inputMode.value === 'url' ? youtubeUrl.value.trim() : null,
+        transcript_text: inputMode.value === 'transcript' ? transcriptText.value.trim() : null,
+        num_pairs: null,
+        max_chunks: null
+      }
+
+      response = await fetch(`${API_BASE}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+    }
 
     const data = await response.json()
 
@@ -161,6 +195,7 @@ const handleGenerate = async () => {
     }
 
     const flashcards = data.data.flashcards || []
+    pdfFileName = data.data.pdf_file || null
 
     let newSet
     if (isGuest.value) {
@@ -169,7 +204,10 @@ const handleGenerate = async () => {
         id: guestDeckId,
         title: data.data.metadata.video_title || 'Untitled Video',
         createdAt: new Date().toISOString(),
-        youtubeUrl: payload.youtube_url,
+        youtubeUrl: payload?.youtube_url || null,
+        sourceType: inputMode.value === 'pdf' ? 'pdf' : null,
+        sourceFile: null,
+        pdfUrl: null,
         cardCount: 0,
         flashcards: [],
         transcript: data.data.transcript || payload.transcript_text || '',
@@ -194,7 +232,9 @@ const handleGenerate = async () => {
       const deck = await createDeck({
         title: data.data.metadata.video_title || 'Untitled Video',
         userId: user.value.id,
-        sourceUrl: payload.youtube_url,
+        sourceUrl: payload?.youtube_url || null,
+        sourceType: inputMode.value === 'pdf' ? 'pdf' : null,
+        sourceFile: inputMode.value === 'pdf' ? pdfFileName : null,
         transcript: data.data.transcript
       })
 
@@ -216,9 +256,13 @@ const handleGenerate = async () => {
     }
 
     newSet.metadata = data.data.metadata
-    newSet.transcript = data.data.transcript || payload.transcript_text || ''
+    newSet.transcript = data.data.transcript || payload?.transcript_text || ''
     newSet.cardCount = newSet.flashcards.length
     newSet.metadata.total_cards = newSet.flashcards.length
+
+    if (!isGuest.value && newSet.sourceType === 'pdf' && newSet.sourceFile) {
+      newSet.pdfUrl = `${API_BASE}/decks/${newSet.id}/pdf?user_id=${user.value.id}`
+    }
 
     sets.value = [newSet, ...sets.value]
     activeSetId.value = newSet.id
@@ -227,6 +271,7 @@ const handleGenerate = async () => {
     testMode.value = false
     activeSessionId.value = null
     quizMessage.value = ''
+    pdfFile.value = null
   } catch (err) {
     const rawMessage = err?.message || ''
     const hintTriggers = ['transcript', 'caption', 'youtube url', 'fetch transcript', 'no transcript']
@@ -536,6 +581,7 @@ const handleViewTranscript = () => {
                 v-model:input-mode="inputMode"
                 v-model:youtube-url="youtubeUrl"
                 v-model:transcript-text="transcriptText"
+                v-model:pdf-file="pdfFile"
                 :is-loading="isLoading"
                 :can-generate="canGenerate"
                 :error-message="errorMessage"
@@ -615,6 +661,7 @@ const handleViewTranscript = () => {
       v-if="showTranscriptModal && activeSet"
       :transcript="activeSet.transcript"
       :title="activeSet.title"
+      :pdf-url="activeSet.pdfUrl"
       @close="showTranscriptModal = false"
     />
   </div>

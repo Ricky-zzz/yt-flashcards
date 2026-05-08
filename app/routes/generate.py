@@ -5,9 +5,10 @@ import math
 import os
 import re
 import time
+import uuid
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, Form, UploadFile
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 
 from app.schemas import (
@@ -23,6 +24,7 @@ from app.services.cleaner import clean_text
 from app.services.chunker import smart_chunk
 from app.services.generator import FlashcardGenerator
 from app.services.classifier import QuestionClassifier
+from app.services.pdf import extract_pdf_text
 from app.utils.errors import (
     InvalidYouTubeURLError,
     TranscriptExtractionError,
@@ -32,6 +34,10 @@ from app.utils.errors import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["generate"])
+
+UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads"
+MAX_PDF_BYTES = 10 * 1024 * 1024
+MAX_PDF_PAGES = 50
 
 
 def get_generator() -> FlashcardGenerator:
@@ -101,6 +107,122 @@ def append_training_data(flashcards: list[FlashcardObject]) -> None:
             )
 
 
+def _generate_from_text(
+    transcript_text: str,
+    video_title: str,
+    num_pairs: int | None,
+    max_chunks: int | None,
+    start_time: float,
+    generator: FlashcardGenerator,
+    classifier: QuestionClassifier,
+    delay_seconds: float,
+    max_pairs_per_chunk: int,
+    max_chunks_limit: int,
+    pdf_file: str | None = None,
+) -> GenerateResponseData:
+    cleaned_text = clean_text(transcript_text)
+    logger.info("Cleaned text: %s characters", len(cleaned_text))
+
+    chunks = smart_chunk(cleaned_text, chunk_size=400, overlap=50)
+    total_chunks = len(chunks)
+
+    word_count = len(cleaned_text.split())
+    density = estimate_density(cleaned_text)
+    target_cards = estimate_target_cards(word_count, density)
+
+    if max_chunks:
+        planned_chunks = min(max_chunks, total_chunks, max_chunks_limit)
+    else:
+        planned_chunks = min(
+            total_chunks,
+            max_chunks_limit,
+            max(1, math.ceil(target_cards / max_pairs_per_chunk))
+        )
+
+    if num_pairs:
+        pairs_per_chunk = clamp(num_pairs, 1, max_pairs_per_chunk)
+    else:
+        pairs_per_chunk = clamp(
+            math.ceil(target_cards / max(1, planned_chunks)),
+            1,
+            max_pairs_per_chunk
+        )
+
+    chunks = chunks[:planned_chunks]
+
+    logger.info(
+        "Created %s chunks, processing %s (target cards=%s, pairs/chunk=%s)",
+        total_chunks,
+        planned_chunks,
+        target_cards,
+        pairs_per_chunk,
+    )
+
+    all_flashcards = []
+
+    for chunk_idx, chunk in enumerate(chunks):
+        logger.info("Processing chunk %s/%s", chunk_idx + 1, len(chunks))
+
+        try:
+            qa_pairs = generator.generate_qa_pairs(
+                chunk,
+                num_pairs=pairs_per_chunk
+            )
+
+            for qa in qa_pairs:
+                classification = classifier.classify_qa_pair(
+                    qa.get("question", ""),
+                    qa.get("answer", ""),
+                    context=chunk
+                )
+
+                flashcard = FlashcardObject(
+                    question=qa.get("question", ""),
+                    answer=qa.get("answer", ""),
+                    chunk_index=chunk_idx,
+                    difficulty=classification.get("difficulty", "medium"),
+                    question_type=classification.get("question_type", "definition"),
+                    topic=classification.get("topic", "general")
+                )
+                all_flashcards.append(flashcard)
+
+        except ModelError as e:
+            logger.error("Model error on chunk %s: %s", chunk_idx, e)
+            continue
+        except Exception as e:
+            logger.error("Unexpected error on chunk %s: %s", chunk_idx, e)
+            continue
+
+        if delay_seconds > 0 and chunk_idx < len(chunks) - 1:
+            time.sleep(delay_seconds)
+
+    if not all_flashcards:
+        raise ModelError("Failed to generate any flashcards from the video")
+
+    try:
+        append_training_data(all_flashcards)
+    except Exception as e:
+        logger.warning("Failed to append training data: %s", e)
+
+    processing_time = time.time() - start_time
+
+    metadata = GenerateMetadata(
+        video_title=video_title,
+        total_cards=len(all_flashcards),
+        processing_time=round(processing_time, 2),
+        chunks_processed=len(chunks),
+        classification_skipped=classifier.classifier is None,
+        model_used="gemini-1.5-flash-latest"
+    )
+
+    return GenerateResponseData(
+        flashcards=all_flashcards,
+        metadata=metadata,
+        transcript=transcript_text,
+        pdf_file=pdf_file
+    )
+
+
 @router.post("/generate", response_model=GenerateResponse)
 async def generate_flashcards(request: GenerateRequest) -> GenerateResponse:
     """Generate flashcards from a YouTube video."""
@@ -146,109 +268,22 @@ async def generate_flashcards(request: GenerateRequest) -> GenerateResponse:
                 logger.warning(f"Could not extract video title: {e}")
                 video_title = "Untitled Video"
 
-        cleaned_text = clean_text(transcript_text)
-        logger.info(f"Cleaned text: {len(cleaned_text)} characters")
-
-        chunks = smart_chunk(cleaned_text, chunk_size=400, overlap=50)
-        total_chunks = len(chunks)
-
-        word_count = len(cleaned_text.split())
-        density = estimate_density(cleaned_text)
-        target_cards = estimate_target_cards(word_count, density)
-
-        if request.max_chunks:
-            planned_chunks = min(request.max_chunks, total_chunks, max_chunks_limit)
-        else:
-            planned_chunks = min(
-                total_chunks,
-                max_chunks_limit,
-                max(1, math.ceil(target_cards / max_pairs_per_chunk))
-            )
-
-        if request.num_pairs:
-            pairs_per_chunk = clamp(request.num_pairs, 1, max_pairs_per_chunk)
-        else:
-            pairs_per_chunk = clamp(
-                math.ceil(target_cards / max(1, planned_chunks)),
-                1,
-                max_pairs_per_chunk
-            )
-
-        chunks = chunks[:planned_chunks]
-
-        logger.info(
-            "Created %s chunks, processing %s (target cards=%s, pairs/chunk=%s)",
-            total_chunks,
-            planned_chunks,
-            target_cards,
-            pairs_per_chunk,
-        )
-
-        all_flashcards = []
-
-        for chunk_idx, chunk in enumerate(chunks):
-            logger.info(f"Processing chunk {chunk_idx + 1}/{len(chunks)}")
-
-            try:
-                qa_pairs = generator.generate_qa_pairs(
-                    chunk,
-                    num_pairs=pairs_per_chunk
-                )
-
-                for qa in qa_pairs:
-                    classification = classifier.classify_qa_pair(
-                        qa.get("question", ""),
-                        qa.get("answer", ""),
-                        context=chunk
-                    )
-
-                    flashcard = FlashcardObject(
-                        question=qa.get("question", ""),
-                        answer=qa.get("answer", ""),
-                        chunk_index=chunk_idx,
-                        difficulty=classification.get("difficulty", "medium"),
-                        question_type=classification.get("question_type", "definition"),
-                        topic=classification.get("topic", "general")
-                    )
-                    all_flashcards.append(flashcard)
-
-            except ModelError as e:
-                logger.error(f"Model error on chunk {chunk_idx}: {e}")
-                continue
-            except Exception as e:
-                logger.error(f"Unexpected error on chunk {chunk_idx}: {e}")
-                continue
-
-            if delay_seconds > 0 and chunk_idx < len(chunks) - 1:
-                time.sleep(delay_seconds)
-
-        if not all_flashcards:
-            raise ModelError("Failed to generate any flashcards from the video")
-
-        try:
-            append_training_data(all_flashcards)
-        except Exception as e:
-            logger.warning("Failed to append training data: %s", e)
-
-        processing_time = time.time() - start_time
-
-        metadata = GenerateMetadata(
+        response_data = _generate_from_text(
+            transcript_text=transcript_text,
             video_title=video_title,
-            total_cards=len(all_flashcards),
-            processing_time=round(processing_time, 2),
-            chunks_processed=len(chunks),
-            classification_skipped=classification_skipped,
-            model_used="gemini-1.5-flash-latest"
-        )
-
-        response_data = GenerateResponseData(
-            flashcards=all_flashcards,
-            metadata=metadata,
-            transcript=transcript_text
+            num_pairs=request.num_pairs,
+            max_chunks=request.max_chunks,
+            start_time=start_time,
+            generator=generator,
+            classifier=classifier,
+            delay_seconds=delay_seconds,
+            max_pairs_per_chunk=max_pairs_per_chunk,
+            max_chunks_limit=max_chunks_limit,
         )
 
         logger.info(
-            f"Successfully generated {len(all_flashcards)} flashcards in {processing_time:.2f}s"
+            "Successfully generated %s flashcards",
+            len(response_data.flashcards)
         )
 
         return GenerateResponse(
@@ -292,6 +327,98 @@ async def generate_flashcards(request: GenerateRequest) -> GenerateResponse:
         )
     except Exception as e:
         logger.error(f"Unexpected error: {e}", exc_info=True)
+        return GenerateResponse(
+            success=False,
+            data=None,
+            message="Internal server error",
+            error=ErrorDetail(type="UnknownError", details=str(e))
+        )
+
+
+@router.post("/generate/pdf", response_model=GenerateResponse)
+async def generate_flashcards_from_pdf(
+    file: UploadFile = File(...),
+    num_pairs: int | None = Form(default=None),
+    max_chunks: int | None = Form(default=None),
+) -> GenerateResponse:
+    """Generate flashcards from an uploaded PDF file."""
+    start_time = time.time()
+
+    generator = get_generator()
+    classifier = get_classifier()
+    delay_seconds = float(os.getenv("CHUNK_DELAY_SECONDS", "0"))
+    max_pairs_per_chunk = 6
+    max_chunks_limit = 20
+
+    try:
+        if file.content_type != "application/pdf":
+            raise NoTranscriptAvailableError("Only PDF files are supported")
+
+        contents = await file.read()
+        if not contents:
+            raise NoTranscriptAvailableError("Uploaded PDF is empty")
+        if len(contents) > MAX_PDF_BYTES:
+            raise NoTranscriptAvailableError("PDF too large (max 10 MB)")
+
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        file_id = uuid.uuid4().hex
+        filename = f"{file_id}.pdf"
+        file_path = UPLOAD_DIR / filename
+        file_path.write_bytes(contents)
+
+        try:
+            transcript_text = extract_pdf_text(file_path, max_pages=MAX_PDF_PAGES)
+        except ValueError as e:
+            raise NoTranscriptAvailableError(str(e))
+        if not transcript_text:
+            raise NoTranscriptAvailableError("PDF has no extractable text")
+
+        video_title = file.filename or "Uploaded PDF"
+        pdf_file = filename
+
+        response_data = _generate_from_text(
+            transcript_text=transcript_text,
+            video_title=video_title,
+            num_pairs=num_pairs,
+            max_chunks=max_chunks,
+            start_time=start_time,
+            generator=generator,
+            classifier=classifier,
+            delay_seconds=delay_seconds,
+            max_pairs_per_chunk=max_pairs_per_chunk,
+            max_chunks_limit=max_chunks_limit,
+            pdf_file=pdf_file,
+        )
+
+        logger.info(
+            "Successfully generated %s flashcards from PDF",
+            len(response_data.flashcards)
+        )
+
+        return GenerateResponse(
+            success=True,
+            data=response_data,
+            message="Flashcards generated successfully",
+            error=None
+        )
+    except NoTranscriptAvailableError as e:
+        logger.error("PDF processing failed: %s", e)
+        return GenerateResponse(
+            success=False,
+            data=None,
+            message=str(e),
+            error=ErrorDetail(type="NoTranscriptAvailableError", details=str(e))
+        )
+    except ModelError as e:
+        logger.error("Model error: %s", e)
+        return GenerateResponse(
+            success=False,
+            data=None,
+            message=str(e),
+            error=ErrorDetail(type="ModelError", details=str(e))
+        )
+    except Exception as e:
+        logger.error("Unexpected error: %s", e, exc_info=True)
         return GenerateResponse(
             success=False,
             data=None,

@@ -63,6 +63,7 @@ class GenerateResponseData(BaseModel):
     flashcards: List[FlashcardObject]
     metadata: GenerateMetadata
     transcript: Optional[str] = None
+    pdf_file: Optional[str] = None
 
 
 class ErrorDetail(BaseModel):

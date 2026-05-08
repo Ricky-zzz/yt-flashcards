@@ -37,6 +37,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+upload_dir = Path(__file__).resolve().parents[1] / "uploads"
+upload_dir.mkdir(parents=True, exist_ok=True)
+
 # Include routes
 app.include_router(generate_router)
 app.include_router(auth_router)

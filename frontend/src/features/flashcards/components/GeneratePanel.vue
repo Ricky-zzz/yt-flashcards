@@ -5,6 +5,7 @@ const props = defineProps({
   inputMode: { type: String, default: 'url' },
   youtubeUrl: { type: String, default: '' },
   transcriptText: { type: String, default: '' },
+  pdfFile: { type: Object, default: null },
   isLoading: { type: Boolean, default: false },
   canGenerate: { type: Boolean, default: false },
   errorMessage: { type: String, default: '' }
@@ -14,6 +15,7 @@ const emit = defineEmits([
   'update:inputMode',
   'update:youtubeUrl',
   'update:transcriptText',
+  'update:pdfFile',
   'generate'
 ])
 
@@ -32,6 +34,11 @@ const modelTranscript = computed({
   set: (val) => emit('update:transcriptText', val)
 })
 
+const handlePdfChange = (event) => {
+  const file = event.target.files?.[0] || null
+  emit('update:pdfFile', file)
+}
+
 </script>
 
 <template>
@@ -46,6 +53,10 @@ const modelTranscript = computed({
           <input v-model="modelMode" type="radio" value="transcript" class="h-3 w-3" />
           Paste transcript
         </label>
+        <label class="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-[10px]">
+          <input v-model="modelMode" type="radio" value="pdf" class="h-3 w-3" />
+          PDF upload
+        </label>
       </div>
 
       <div v-if="props.inputMode === 'url'">
@@ -58,7 +69,7 @@ const modelTranscript = computed({
         />
       </div>
 
-      <div v-else>
+      <div v-else-if="props.inputMode === 'transcript'">
         <label class="text-xs uppercase tracking-[0.2em] text-slate-500">Paste transcript</label>
         <textarea
           v-model="modelTranscript"
@@ -66,6 +77,20 @@ const modelTranscript = computed({
           placeholder="Paste transcript text here..."
           class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
         ></textarea>
+      </div>
+
+      <div v-else>
+        <label class="text-xs uppercase tracking-[0.2em] text-slate-500">Upload PDF</label>
+        <input
+          type="file"
+          accept="application/pdf"
+          class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+          @change="handlePdfChange"
+        />
+        <p class="mt-2 text-xs text-slate-500">Max 10 MB, up to 50 pages.</p>
+        <p v-if="props.pdfFile" class="mt-2 text-xs text-slate-600">
+          Selected: {{ props.pdfFile.name }}
+        </p>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">

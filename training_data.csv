@@ -5170,3 +5170,15 @@ Which animal is the only mammal capable of flight?,The bat.,medium,identificatio
 How many pounds of bamboo can a panda consume daily?,Up to 32 pounds.,hard,explanation,english,4
 What is the dominant male in a gorilla troop called?,A Silverback.,easy,definition,english,4
 How many tentacles does an octopus have?,Eight.,hard,explanation,english,4
+What is an intelligent system?,A system that perceives its environment and takes actions to maximize its goal success.,easy,definition,math,0
+What is the definition of an agent?,Anything that perceives its environment through sensors and acts upon it through actuators.,easy,definition,english,0
+What are sensors in an intelligent system?,The inputs that allow an agent to perceive its surroundings.,easy,definition,math,0
+What is the function of actuators?,They are outputs that enable an agent to act on its environment.,easy,definition,math,0
+What is an agent program?,The function that maps percepts to actions.,easy,definition,math,0
+How do simple reflex agents choose actions?,They act based solely on the current percept.,hard,explanation,math,0
+Which agents use searching and planning algorithms to reach a desired state?,Goal-based agents,medium,identification,math,1
+What function do utility-based agents use to measure state desirability?,A utility function,medium,definition,math,1
+Which AI subfield allows systems to improve without explicit programming?,Machine learning,medium,identification,math,1
+What type of machine learning uses labeled data?,Supervised learning,medium,definition,math,1
+Which learning method identifies hidden patterns in unlabeled data?,Unsupervised learning,medium,identification,math,1
+What learning style uses trial and error with rewards or penalties?,Reinforcement learning,medium,definition,math,1
