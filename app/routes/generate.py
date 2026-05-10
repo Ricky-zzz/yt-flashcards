@@ -23,7 +23,6 @@ from app.services.transcript import extract_transcript, get_video_title
 from app.services.cleaner import clean_text
 from app.services.chunker import smart_chunk
 from app.services.generator import FlashcardGenerator
-from app.services.classifier import QuestionClassifier
 from app.services.pdf import extract_pdf_text
 from app.utils.errors import (
     InvalidYouTubeURLError,
@@ -43,11 +42,6 @@ MAX_PDF_PAGES = 50
 def get_generator() -> FlashcardGenerator:
     """Lazy load generator on first use."""
     return FlashcardGenerator()
-
-
-def get_classifier() -> QuestionClassifier:
-    """Lazy load classifier on first use."""
-    return QuestionClassifier()
 
 
 def validate_youtube_url(url: str) -> bool:
@@ -114,7 +108,6 @@ def _generate_from_text(
     max_chunks: int | None,
     start_time: float,
     generator: FlashcardGenerator,
-    classifier: QuestionClassifier,
     delay_seconds: float,
     max_pairs_per_chunk: int,
     max_chunks_limit: int,
@@ -170,19 +163,14 @@ def _generate_from_text(
             )
 
             for qa in qa_pairs:
-                classification = classifier.classify_qa_pair(
-                    qa.get("question", ""),
-                    qa.get("answer", ""),
-                    context=chunk
-                )
-
+                # Gemini now returns difficulty, question_type, and topic directly
                 flashcard = FlashcardObject(
                     question=qa.get("question", ""),
                     answer=qa.get("answer", ""),
-                    chunk_index=chunk_idx,
-                    difficulty=classification.get("difficulty", "medium"),
-                    question_type=classification.get("question_type", "definition"),
-                    topic=classification.get("topic", "general")
+                    chunk_index=qa.get("chunk_index", chunk_idx),
+                    difficulty=qa.get("difficulty", "medium"),
+                    question_type=qa.get("question_type", "definition"),
+                    topic=qa.get("topic", "general")
                 )
                 all_flashcards.append(flashcard)
 
@@ -211,7 +199,7 @@ def _generate_from_text(
         total_cards=len(all_flashcards),
         processing_time=round(processing_time, 2),
         chunks_processed=len(chunks),
-        classification_skipped=classifier.classifier is None,
+        classification_skipped=False,
         model_used="gemini-1.5-flash-latest"
     )
 
@@ -229,8 +217,6 @@ async def generate_flashcards(request: GenerateRequest) -> GenerateResponse:
     start_time = time.time()
 
     generator = get_generator()
-    classifier = get_classifier()
-    classification_skipped = classifier.classifier is None
     delay_seconds = float(os.getenv("CHUNK_DELAY_SECONDS", "0"))
     max_pairs_per_chunk = 6
     max_chunks_limit = 20
@@ -275,7 +261,6 @@ async def generate_flashcards(request: GenerateRequest) -> GenerateResponse:
             max_chunks=request.max_chunks,
             start_time=start_time,
             generator=generator,
-            classifier=classifier,
             delay_seconds=delay_seconds,
             max_pairs_per_chunk=max_pairs_per_chunk,
             max_chunks_limit=max_chunks_limit,
@@ -345,7 +330,6 @@ async def generate_flashcards_from_pdf(
     start_time = time.time()
 
     generator = get_generator()
-    classifier = get_classifier()
     delay_seconds = float(os.getenv("CHUNK_DELAY_SECONDS", "0"))
     max_pairs_per_chunk = 6
     max_chunks_limit = 20
@@ -383,7 +367,6 @@ async def generate_flashcards_from_pdf(
             max_chunks=max_chunks,
             start_time=start_time,
             generator=generator,
-            classifier=classifier,
             delay_seconds=delay_seconds,
             max_pairs_per_chunk=max_pairs_per_chunk,
             max_chunks_limit=max_chunks_limit,

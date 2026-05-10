@@ -81,7 +81,7 @@ class FlashcardGenerator:
             retries: Retry attempts on parse failure (default: 2)
         
         Returns:
-            List of {"question": str, "answer": str} dicts
+            List of dicts with question, answer, difficulty, question_type, topic
         
         Raises:
             Exception: If Gemini API fails after retries
@@ -90,21 +90,39 @@ class FlashcardGenerator:
         if len(text) > 2000:
             text = text[:2000]
         
-        prompt = f"""From this transcript excerpt, generate exactly {num_pairs} flashcard Q&A pairs.
+        prompt = f"""From this transcript excerpt, generate exactly {num_pairs} flashcard Q&A pairs with metadata.
 
-Standards:
+DIFFICULTY LEVELS:
+- easy: direct recall or simple fact
+- medium: single-step rule or reasoning
+- hard: multi-step reasoning or reasoning plus interpretation
+
+QUESTION TYPES:
+- identification: asking what something is
+- definition: asking for meaning
+- explanation: asking why or how
+- comparison: asking difference between two ideas
+- computation: applying rule, calculation, or transformation
+
+TOPICS (choose ONE):
+english, math, science, technology, history, geography, health, business, arts, general
+
+STANDARDS:
 - One idea per card. Do NOT ask two questions in one.
 - Keep questions short and direct.
 - Answers should be a single sentence or short phrase.
-- Prefer these question types: identification, definition, explanation, comparison, computation.
-- Avoid "and" or multi-part wording unless absolutely required.
+- Match question_type to the actual question structure.
+- Classify difficulty based on cognitive load needed.
 
 Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
 {{
     "pairs": [
         {{
             "question": "Clear, concise question",
-            "answer": "Short, accurate answer from the text"
+            "answer": "Short, accurate answer from the text",
+            "difficulty": "easy|medium|hard",
+            "question_type": "identification|definition|explanation|comparison|computation",
+            "topic": "one topic from list"
         }}
     ]
 }}
@@ -126,7 +144,7 @@ Generate only the JSON response, nothing else:"""
                     logger.warning(f"Parse failed on attempt {attempt + 1}, retrying...")
 
             except Exception as e:
-                # If rate-limited, attempt fallback once before retrying
+                # If rate-limited, switch immediately to fallback and do not retry Gemini.
                 if self._is_rate_limit_error(e) and self._fallback_ready():
                     logger.warning("Rate limit hit; switching to fallback provider.")
                     try:
@@ -134,8 +152,10 @@ Generate only the JSON response, nothing else:"""
                         pairs = self._parse_pairs(response_text, num_pairs)
                         if pairs:
                             return pairs
+                        raise ValueError("Fallback provider returned no valid pairs.")
                     except Exception as fallback_error:
                         logger.error(f"Fallback provider failed: {fallback_error}")
+                        raise
 
                 logger.error(f"Generation attempt {attempt + 1} failed: {e}")
                 if attempt == retries - 1:
@@ -144,11 +164,35 @@ Generate only the JSON response, nothing else:"""
         return []
 
     def _parse_pairs(self, response_text: str, num_pairs: int) -> List[Dict[str, str]]:
+        """
+        Parse JSON response and validate required fields.
+        Returns pairs with question, answer, difficulty, question_type, topic.
+        """
+        # Valid enum values
+        valid_difficulties = {"easy", "medium", "hard"}
+        valid_question_types = {"identification", "definition", "explanation", "comparison", "computation"}
+        valid_topics = {"english", "math", "science", "technology", "history", "geography", "health", "business", "arts", "general"}
+
+        def validate_pair(pair):
+            """Ensure pair has all required fields with valid values."""
+            if not isinstance(pair, dict):
+                return False
+            if not all(k in pair for k in ["question", "answer", "difficulty", "question_type", "topic"]):
+                return False
+            if pair["difficulty"].lower() not in valid_difficulties:
+                return False
+            if pair["question_type"].lower() not in valid_question_types:
+                return False
+            if pair["topic"].lower() not in valid_topics:
+                return False
+            return True
+
         try:
             data = json.loads(response_text)
             pairs = data.get('pairs', [])
-            if pairs:
-                return pairs[:num_pairs]
+            valid_pairs = [p for p in pairs if validate_pair(p)]
+            if valid_pairs:
+                return valid_pairs[:num_pairs]
         except json.JSONDecodeError:
             # Try to extract JSON if wrapped in markdown
             if '```json' in response_text:
@@ -158,10 +202,14 @@ Generate only the JSON response, nothing else:"""
             else:
                 json_str = response_text
 
-            data = json.loads(json_str)
-            pairs = data.get('pairs', [])
-            if pairs:
-                return pairs[:num_pairs]
+            try:
+                data = json.loads(json_str)
+                pairs = data.get('pairs', [])
+                valid_pairs = [p for p in pairs if validate_pair(p)]
+                if valid_pairs:
+                    return valid_pairs[:num_pairs]
+            except json.JSONDecodeError:
+                logger.error("Failed to parse JSON response: %s", json_str[:200])
 
         return []
 
