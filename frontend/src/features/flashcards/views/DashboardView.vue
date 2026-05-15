@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Sidebar from '../components/Sidebar.vue'
 import GeneratePanel from '../components/GeneratePanel.vue'
@@ -42,7 +42,13 @@ const sets = ref([])
 const activeSetId = ref(null)
 
 const isLoading = ref(false)
+const progressValue = ref(0)
+const progressLabel = ref('Generating')
 const errorMessage = ref('')
+
+let progressTimer = null
+let progressStart = 0
+let progressDurationMs = 20000
 
 const showNewCard = ref(false)
 const newQuestion = ref('')
@@ -101,6 +107,71 @@ const mapCard = (card, meta = {}) => ({
   chunk_index: meta.chunk_index ?? -1
 })
 
+const clampNumber = (value, minValue, maxValue) => Math.min(maxValue, Math.max(minValue, value))
+
+const estimateDurationMs = () => {
+  if (inputMode.value === 'transcript') {
+    const words = transcriptText.value.trim().split(/\s+/).filter(Boolean).length
+    const totalChunks = Math.max(1, Math.ceil(words / 400))
+    const seconds = 8 + totalChunks * 1.8
+    return clampNumber(Math.round(seconds * 1000), 8000, 40000)
+  }
+
+  if (inputMode.value === 'pdf') {
+    const bytes = pdfFile.value?.size || 0
+    const pageEstimate = Math.max(1, Math.round(bytes / 120000))
+    const seconds = 10 + pageEstimate * 1.5
+    return clampNumber(Math.round(seconds * 1000), 10000, 45000)
+  }
+
+  return 16000
+}
+
+const getInitialPhaseLabel = () => {
+  if (inputMode.value === 'pdf') return 'Reading PDF'
+  if (inputMode.value === 'transcript') return 'Checking transcript'
+  return 'Fetching transcript'
+}
+
+const getProgressLabel = (ratio) => {
+  if (ratio < 0.2) return getInitialPhaseLabel()
+  if (ratio < 0.4) return 'Cleaning and chunking'
+  if (ratio < 0.9) return 'Generating cards'
+  return 'Finalizing'
+}
+
+const stopProgress = () => {
+  if (progressTimer) {
+    clearInterval(progressTimer)
+    progressTimer = null
+  }
+}
+
+const startProgress = () => {
+  stopProgress()
+  progressStart = Date.now()
+  progressDurationMs = estimateDurationMs()
+  progressValue.value = 3
+  progressLabel.value = getProgressLabel(0)
+
+  progressTimer = window.setInterval(() => {
+    if (!isLoading.value) return
+    const elapsed = Date.now() - progressStart
+    const ratio = Math.min(elapsed / progressDurationMs, 0.99)
+    const eased = 1 - Math.pow(1 - ratio, 2)
+    const nextValue = Math.max(3, Math.floor(eased * 100))
+
+    progressValue.value = Math.min(99, nextValue)
+    progressLabel.value = getProgressLabel(ratio)
+  }, 200)
+}
+
+const resetProgress = () => {
+  stopProgress()
+  progressValue.value = 0
+  progressLabel.value = 'Generating'
+}
+
 const loadDecks = async () => {
   if (!user.value) return
   try {
@@ -145,10 +216,15 @@ onMounted(async () => {
   await loadDecks()
 })
 
+onBeforeUnmount(() => {
+  stopProgress()
+})
+
 const handleGenerate = async () => {
   if (!canGenerate.value || !user.value) return
   errorMessage.value = ''
   isLoading.value = true
+  startProgress()
 
   try {
     let response
@@ -283,6 +359,7 @@ const handleGenerate = async () => {
     }
   } finally {
     isLoading.value = false
+    resetProgress()
   }
 }
 
@@ -583,6 +660,8 @@ const handleViewTranscript = () => {
                 v-model:transcript-text="transcriptText"
                 v-model:pdf-file="pdfFile"
                 :is-loading="isLoading"
+                :progress-value="progressValue"
+                :progress-label="progressLabel"
                 :can-generate="canGenerate"
                 :error-message="errorMessage"
                 @generate="handleGenerate"

@@ -7,6 +7,8 @@ const props = defineProps({
   transcriptText: { type: String, default: '' },
   pdfFile: { type: Object, default: null },
   isLoading: { type: Boolean, default: false },
+  progressValue: { type: Number, default: 0 },
+  progressLabel: { type: String, default: 'Generating' },
   canGenerate: { type: Boolean, default: false },
   errorMessage: { type: String, default: '' }
 })
@@ -99,9 +101,28 @@ const handlePdfChange = (event) => {
           :disabled="!props.canGenerate"
           @click="emit('generate')"
         >
-          {{ props.isLoading ? 'Generating...' : 'Generate flashcards' }}
+          <span class="flex items-center gap-2">
+            <span
+              v-if="props.isLoading"
+              class="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+            ></span>
+            <span>{{ props.isLoading ? 'Generating...' : 'Generate flashcards' }}</span>
+          </span>
         </button>
-        <span v-if="props.isLoading" class="text-xs text-slate-500">This may take ~20s.</span>
+      </div>
+
+      <div v-if="props.isLoading" class="w-full">
+        <div class="flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-slate-500">
+          <span>{{ props.progressLabel || 'Generating' }}</span>
+          <span>{{ Math.min(props.progressValue, 99) }}%</span>
+        </div>
+        <div class="mt-2 h-2 w-full rounded-full bg-slate-200">
+          <div
+            class="h-2 rounded-full bg-slate-900 transition-all duration-500"
+            :style="{ width: `${Math.min(props.progressValue, 99)}%` }"
+          ></div>
+        </div>
+        <p class="mt-2 text-xs text-slate-500">This may take ~20s.</p>
       </div>
 
       <p v-if="props.errorMessage" class="text-sm text-rose-600">{{ props.errorMessage }}</p>
