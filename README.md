@@ -2,6 +2,22 @@
 
 Convert YouTube videos into study flashcards using AI-powered transcript extraction and question-answer pair generation.
 
+## Overview
+
+A full-stack application that automates flashcard creation from YouTube videos. The backend pipeline extracts transcripts, cleans noise, chunks content semantically, and generates Q&A pairs using machine learning. A Vue.js frontend provides an intuitive interface for users to generate, organize, and review flashcards. Built with FastAPI, SQLAlchemy ORM, and modern AI models.
+
+## What I Learned
+
+- **API Development**: Built RESTful APIs with FastAPI, designed request/response schemas with Pydantic, and structured endpoints for scalability
+- **Object-Oriented Design**: Organized code into service classes (transcript extraction, text cleaning, chunking, Q&A generation) with single responsibility principles
+- **Database Design & ORM**: Implemented SQLAlchemy models for users, decks, flashcards, and review sessions with migrations using Alembic
+- **Text Processing**: Applied NLP techniques including tokenization, semantic chunking with word-count-based overlap, and noise removal from auto-generated captions
+- **Machine Learning Integration**: Integrated Hugging Face transformers (T5 model) for Q&A generation with CPU/GPU fallback handling
+- **Authentication & Security**: Implemented JWT-based authentication, password hashing, and secure environment variable management
+- **Frontend Architecture**: Built a Vue 3 component-based frontend with service layer abstraction, state management patterns, and API integration
+- **Full-Stack Workflow**: Managed the complete development lifecycle from data pipeline testing to API endpoints to user-facing features
+
+
 ## Quick Start
 
 ### Prerequisites
@@ -121,7 +137,7 @@ python tests/pipeline_test.py "https://youtu.be/cs3B0zcRJco" --max_chunks 3
 
 **Output:** `pipeline_results.json` with extracted flashcards
 by word count (~600 words/chunk with overlap)
-- ✅ Generates basic Q&A pairs using T5 model
+-  Generates basic Q&A pairs using T5 model
   - Simple keyword extraction + template approach for initial release
   - Will be upgraded to Mistral/ChatGPT in Phase 2
 
@@ -133,7 +149,7 @@ YouTube auto-captions have **zero punctuation**, so we chunk by **word count** n
 - **Minimum:** 80 words to generate cards from
 
 Example: 8,500-word transcript → ~12-15 chunks → 30-45 flashcards
-- ✅ Chunks text semantically
+- Chunks text semantically
   - Supports: `youtu.be/ID`, `youtube.com/watch?v=ID`, `youtube.com/shorts/ID`
   - Returns: Plain text transcripts or timestamped snippets
   
@@ -176,45 +192,6 @@ YouTube URL
     ↓
 JSON Output
 ```
-
-## Current API
-
-- POST /api/v1/generate
-- GET /health
-
-## Next Steps: Phase 3
-
-See [PHASE2.md](PHASE2.md) for detailed Phase 2 roadmap.
-
-**TL;DR:**
-- Add authentication (users own flashcard sets)
-- Persist flashcards to a database (SQLite for dev)
-- Then refine frontend and backend UX
-
-## Troubleshooting
-
-### "ModuleNotFoundError: No module named 'youtube_transcript_api'"
-- Make sure virtual environment is activated
-- Reinstall dependencies: `pip install youtube-transcript-api`
-
-### "No transcripts available"
-- Video must have captions enabled
-- Try another video first
-- If it still fails, ensure `yt-dlp` is installed for fallback subtitle fetching
-
-### Slow performance
-- First run downloads T5 model (~500MB) - subsequent runs are instant
-- Consider increasing RAM if chunking is slow
-
-## Future Phases
-
-- **Phase 3:** Auth + database (SQLite dev, Postgres prod)
-- **Phase 4:** Frontend polish + sharing/export
-- **Phase 5:** Flashcard review & spaced repetition algorithms
-
-## Contributing
-
-Current focus: Phase 2 API development
 
 ## License
 
